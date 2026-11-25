@@ -99,10 +99,11 @@
       this.rgsUrl = p.get('rgs_url') || '';
       this.sessionID = p.get('sessionID') || '';
       this.currency = p.get('currency') || 'USD';
+      this.isSocial = p.get('social') === 'true' || p.get('social') === '1';
       this.isLive = Boolean(this.rgsUrl && this.sessionID && p.get('demo') !== '1');
       this.balance = 1000.0;
       this.betLevels = [0.2, 0.4, 0.6, 1.0, 2.0, 5.0, 10.0, 20.0, 50.0, 100.0];
-      this.currencySymbols = { USD: '$', EUR: '€', TRY: '₺', GBP: '£', CAD: 'CA$', AUD: 'A$' };
+      this.currencySymbols = { USD: '$', EUR: '€', TRY: '₺', GBP: '£', CAD: 'CA$', AUD: 'A$', SC: 'SC ', GC: 'GC ' };
     }
 
     formatMoney(val) {
@@ -112,7 +113,7 @@
 
     async authenticate() {
       if (!this.isLive) {
-        return { balance: this.balance, betLevels: this.betLevels, mode: 'DEMO' };
+        return { balance: this.balance, betLevels: this.betLevels, mode: 'DEMO', pendingRound: null };
       }
       const res = await fetch(`${this.rgsUrl.replace(/\/$/, '')}/wallet/authenticate`, {
         method: 'POST',
@@ -126,7 +127,21 @@
       if (Array.isArray(data.config?.betLevels) && data.config.betLevels.length) {
         this.betLevels = data.config.betLevels.map(v => v / API_SCALE);
       }
-      return { balance: this.balance, betLevels: this.betLevels, mode: 'LIVE' };
+
+      // Bağlantı kopması sonrası yarım kalmış tur kurtarma (Recovery)
+      let pendingRound = null;
+      const activeEvents = data.round?.state || data.round?.events;
+      if (data.round && Array.isArray(activeEvents) && activeEvents.length > 0) {
+        pendingRound = {
+          balanceAfter: this.balance,
+          betAmount: data.round.amount ? data.round.amount / API_SCALE : this.betLevels[0],
+          events: activeEvents,
+          payoutMultiplier: (data.round.payoutMultiplier ?? 0) / 100,
+          triggeredBonus: activeEvents.length > 1 || activeEvents[0]?.type === 'bonusSpin'
+        };
+      }
+
+      return { balance: this.balance, betLevels: this.betLevels, mode: 'LIVE', pendingRound };
     }
 
     async play(betAmount, mode = 'base') {
@@ -153,7 +168,7 @@
         };
       }
 
-      // LOCAL DEMO ENGINE (Birebir aynı matematik kuralları)
+      // LOCAL DEMO ENGINE
       if (this.balance < cost) throw new Error('INSUFFICIENT BALANCE');
       this.balance = +(this.balance - cost).toFixed(2);
       const events = [];
@@ -214,3 +229,4 @@
   window.BV_CONST = { PAYLINES, PAYTABLE };
   window.BV_RGS = new RGSAdapter();
 })();
+
