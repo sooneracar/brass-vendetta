@@ -12,34 +12,34 @@
 
   const SYMBOL_KEYS = ['L1', 'L2', 'L3', 'L4', 'H1', 'H2', 'H3', 'H4', 'W', 'VS', 'SC'];
   const REGULAR_KEYS = ['H4', 'H3', 'H2', 'H1', 'L4', 'L3', 'L2', 'L1'];
+  const EXTRA_TEXTURES = ['tile_bg', 'vs_banner'];
   const LINE_COLORS = [
     0xf6d379, 0xff7b29, 0x49d6ff, 0xff4d6d, 0x7cff7c, 0xd88cff, 0xffd166,
     0x06d6a0, 0xef476f, 0x4cc9f0, 0xf77f00, 0xa8dadc, 0xe9c46a, 0xff9f1c
   ];
 
-  // SEMBOL RENK HİYERARŞİSİ (Monokrom sorununu ortadan kaldırır)
+  // Sembol renk ayrımı: L1-L4 artık canlı mücevher harfler, H1-H4 kendi auralarıyla parlar
   const SYMBOL_STYLE = {
-    L1: { tint: 0xcbd6e6, aura: null,     alpha: 0 },
-    L2: { tint: 0xcbd6e6, aura: null,     alpha: 0 },
-    L3: { tint: 0xcbd6e6, aura: null,     alpha: 0 },
-    L4: { tint: 0xd4dfee, aura: null,     alpha: 0 },
-    H1: { tint: 0xffffff, aura: 0x26e69f, alpha: 0.22 }, // Zümrüt
-    H2: { tint: 0xffffff, aura: 0xff5a45, alpha: 0.24 }, // Kızıl Bakır
-    H3: { tint: 0xffffff, aura: 0x3ec8ff, alpha: 0.26 }, // Elektrik Mavisi
-    H4: { tint: 0xffffff, aura: 0xffd24d, alpha: 0.30 }, // Saf Altın
-    W:  { tint: 0xffffff, aura: 0xffb326, alpha: 0.34, pulse: true },
-    SC: { tint: 0xffffff, aura: 0xff6218, alpha: 0.36, pulse: true },
-    VS: { tint: 0xffffff, aura: 0x49d6ff, alpha: 0.36, pulse: true }
+    L1: { aura: 0x26e69f, alpha: 0.14 },
+    L2: { aura: 0xb95cff, alpha: 0.14 },
+    L3: { aura: 0x3ec8ff, alpha: 0.14 },
+    L4: { aura: 0xff4e4e, alpha: 0.14 },
+    H1: { aura: 0x26e69f, alpha: 0.24 },
+    H2: { aura: 0xff5a45, alpha: 0.26 },
+    H3: { aura: 0x3ec8ff, alpha: 0.28 },
+    H4: { aura: 0xffd24d, alpha: 0.34 },
+    W:  { aura: 0xffb326, alpha: 0.36 },
+    SC: { aura: 0xff6218, alpha: 0.38 },
+    VS: { aura: 0x49d6ff, alpha: 0.38 }
   };
 
   const RGS = window.BV_RGS;
   const AUDIO = window.BV_AUDIO;
   const { PAYLINES, PAYTABLE } = window.BV_CONST;
-
   const $ = (id) => document.getElementById(id);
-  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 
   const state = {
+    paused: false,
     betIndex: 3,
     balance: 1000,
     displayedWin: 0,
@@ -55,7 +55,6 @@
     textures: {},
     particles: [],
     steamPuffs: [],
-    coins: [],
     rings: [],
     floatingTexts: [],
     gears: [],
@@ -75,6 +74,48 @@
     ]
   };
 
+  // --- GLOBAL PAUSE GATE (Ekran alta inince zamanlayıcı, animasyon ve ses tamamen donar) ---
+  function gameSleep(ms) {
+    return new Promise((resolve) => {
+      if (ms <= 0) return resolve();
+      let elapsed = 0;
+      let last = performance.now();
+      function step(now) {
+        if (!state.paused) {
+          elapsed += Math.min(80, now - last);
+        }
+        last = now;
+        if (elapsed >= ms) return resolve();
+        requestAnimationFrame(step);
+      }
+      requestAnimationFrame(step);
+    });
+  }
+
+  function applyGlobalPause(shouldPause) {
+    if (state.paused === shouldPause) return;
+    state.paused = shouldPause;
+    const vid = $('studio-video');
+    if (shouldPause) {
+      app.ticker.stop();
+      AUDIO.pauseAll();
+      if (vid && !vid.paused && !$('studio-intro').classList.contains('hidden')) {
+        vid.pause();
+      }
+    } else {
+      app.ticker.start();
+      AUDIO.resumeAll();
+      if (vid && vid.paused && !$('studio-intro').classList.contains('hidden')) {
+        vid.play().catch(() => {});
+      }
+    }
+  }
+
+  document.addEventListener('visibilitychange', () => applyGlobalPause(document.hidden));
+  window.addEventListener('pagehide', () => applyGlobalPause(true));
+  window.addEventListener('pageshow', () => applyGlobalPause(false));
+
+  // --- YARDIMCI UI FONKSİYONLARI ---
   function currentBet() {
     return RGS.betLevels[state.betIndex] ?? 1.0;
   }
@@ -87,8 +128,7 @@
     showToast._t = setTimeout(() => el.classList.add('hidden'), 2600);
   }
 
-  // AKICI KAZANÇ SAYACI (ROLL-UP)
-  function animateMoney(el, fromVal, toVal, durationMs = 420) {
+  function animateMoney(el, fromVal, toVal, durationMs = 460) {
     if (!el) return;
     const animId = (el._animId || 0) + 1;
     el._animId = animId;
@@ -96,10 +136,13 @@
       el.textContent = RGS.formatMoney(toVal);
       return;
     }
-    const start = performance.now();
+    let elapsed = 0;
+    let last = performance.now();
     const tick = (now) => {
       if (el._animId !== animId) return;
-      const p = Math.min(1, (now - start) / durationMs);
+      if (!state.paused) elapsed += Math.min(80, now - last);
+      last = now;
+      const p = Math.min(1, elapsed / durationMs);
       const eased = 1 - Math.pow(1 - p, 2.5);
       el.textContent = RGS.formatMoney(fromVal + (toVal - fromVal) * eased);
       if (p < 1) requestAnimationFrame(tick);
@@ -118,7 +161,6 @@
     $('ui-bet').textContent = RGS.formatMoney(bet);
     $('buy-bonus-price').textContent = RGS.formatMoney(buyCost);
 
-    // Buy Bonus Modal canlı bahis göstergesi
     $('modal-bet-val').textContent = RGS.formatMoney(bet);
     $('buy-modal-cost').textContent = RGS.formatMoney(buyCost);
     $('buy-insufficient').classList.toggle('hidden', canAffordBuy);
@@ -130,13 +172,11 @@
     $('btn-bet-up').disabled = atMax;
     $('btn-modal-bet-down').disabled = atMin;
     $('btn-modal-bet-up').disabled = atMax;
-
-    // Buy Bonus düğmesi modalı açıp bahsi düşürebilmek için bakiye yetmese de açılır (sadece spin/bonus anında kilitli)
     $('btn-buy-bonus').disabled = locked;
 
     if (winVal !== null) {
       if (animateWin && winVal > state.displayedWin) {
-        animateMoney($('ui-win'), state.displayedWin, winVal, state.turbo ? 240 : 480);
+        animateMoney($('ui-win'), state.displayedWin, winVal, state.turbo ? 250 : 520);
       } else {
         $('ui-win').textContent = RGS.formatMoney(winVal);
       }
@@ -177,8 +217,7 @@
   }
 
   function buildPaytableAndLines() {
-    const ptGrid = $('paytable-grid');
-    ptGrid.innerHTML = REGULAR_KEYS.map(k => {
+    $('paytable-grid').innerHTML = REGULAR_KEYS.map(k => {
       const p = PAYTABLE[k];
       return `
         <div class="pt-card">
@@ -191,8 +230,7 @@
         </div>`;
     }).join('');
 
-    const plGrid = $('paylines-grid');
-    plGrid.innerHTML = PAYLINES.map((line, i) => {
+    $('paylines-grid').innerHTML = PAYLINES.map((line, i) => {
       let dots = '';
       const pts = [];
       for (let c = 0; c < 5; c++) {
@@ -239,17 +277,14 @@
   resizeStage();
   window.addEventListener('resize', resizeStage);
   window.addEventListener('orientationchange', () => setTimeout(resizeStage, 140));
-  if (window.ResizeObserver) {
-    new ResizeObserver(resizeStage).observe($('stage-wrap'));
-  }
+  if (window.ResizeObserver) new ResizeObserver(resizeStage).observe($('stage-wrap'));
 
-  // Merkez pivotlu root (Kamera Zoom & Sarsıntı için)
   const root = new PIXI.Container();
   root.pivot.set(STAGE_W / 2, STAGE_H / 2);
   root.position.set(STAGE_W / 2, STAGE_H / 2);
   app.stage.addChild(root);
 
-  // --- YAŞAYAN STEAMPUNK DİŞLİLERİ (TAHTA ARKASINDA DÖNEN PİRİNÇ ÇARKLAR) ---
+  // Dönen Steampunk Dişlileri
   const gearLayer = new PIXI.Container();
   root.addChild(gearLayer);
 
@@ -259,16 +294,13 @@
     const pts = [];
     for (let i = 0; i < teeth; i++) {
       const a0 = i * step;
-      const a1 = a0 + step * 0.22;
-      const a2 = a0 + step * 0.5;
-      const a3 = a0 + step * 0.72;
       pts.push(Math.cos(a0) * innerR, Math.sin(a0) * innerR);
-      pts.push(Math.cos(a1) * outerR, Math.sin(a1) * outerR);
-      pts.push(Math.cos(a2) * outerR, Math.sin(a2) * outerR);
-      pts.push(Math.cos(a3) * innerR, Math.sin(a3) * innerR);
+      pts.push(Math.cos(a0 + step * 0.22) * outerR, Math.sin(a0 + step * 0.22) * outerR);
+      pts.push(Math.cos(a0 + step * 0.5) * outerR, Math.sin(a0 + step * 0.5) * outerR);
+      pts.push(Math.cos(a0 + step * 0.72) * innerR, Math.sin(a0 + step * 0.72) * innerR);
     }
-    g.poly(pts).fill({ color: fillColor, alpha: 0.9 }).stroke({ width: 2.5, color: strokeColor, alpha: 0.95 });
-    g.circle(0, 0, innerR * 0.62).fill({ color: 0x0b0f18, alpha: 0.88 }).stroke({ width: 2, color: strokeColor });
+    g.poly(pts).fill({ color: fillColor, alpha: 0.9 }).stroke({ width: 2.5, color: strokeColor });
+    g.circle(0, 0, innerR * 0.62).fill({ color: 0x0b0f18, alpha: 0.85 }).stroke({ width: 2, color: strokeColor });
     for (let s = 0; s < 4; s++) {
       const ang = (s * Math.PI) / 2;
       g.moveTo(Math.cos(ang) * -innerR * 0.6, Math.sin(ang) * -innerR * 0.6)
@@ -279,68 +311,53 @@
     return g;
   }
 
-  const gearSpecs = [
-    { x: BOARD_X - 6,            y: BOARD_Y + 26,          r1: 58, r2: 46, teeth: 12, dir:  1, fill: 0x6e4a16, stroke: 0xdba442 },
-    { x: BOARD_X + BOARD_W + 8,  y: BOARD_Y + 34,          r1: 62, r2: 49, teeth: 14, dir: -1, fill: 0x5c3c11, stroke: 0xc89336 },
-    { x: BOARD_X - 8,            y: BOARD_Y + BOARD_H - 28, r1: 54, r2: 43, teeth: 11, dir: -1, fill: 0x4b3310, stroke: 0xb8822d },
-    { x: BOARD_X + BOARD_W + 6,  y: BOARD_Y + BOARD_H - 22, r1: 56, r2: 44, teeth: 12, dir:  1, fill: 0x6e4a16, stroke: 0xdba442 }
-  ];
-  gearSpecs.forEach((gs) => {
+  [
+    { x: BOARD_X - 6,           y: BOARD_Y + 26,          r1: 58, r2: 46, teeth: 12, dir:  1, fill: 0x6e4a16, stroke: 0xdba442 },
+    { x: BOARD_X + BOARD_W + 8, y: BOARD_Y + 34,          r1: 62, r2: 49, teeth: 14, dir: -1, fill: 0x5c3c11, stroke: 0xc89336 },
+    { x: BOARD_X - 8,           y: BOARD_Y + BOARD_H - 28, r1: 54, r2: 43, teeth: 11, dir: -1, fill: 0x4b3310, stroke: 0xb8822d },
+    { x: BOARD_X + BOARD_W + 6, y: BOARD_Y + BOARD_H - 22, r1: 56, r2: 44, teeth: 12, dir:  1, fill: 0x6e4a16, stroke: 0xdba442 }
+  ].forEach((gs) => {
     const g = createGear(gs.r1, gs.r2, gs.teeth, gs.fill, gs.stroke);
     g.position.set(gs.x, gs.y);
     gearLayer.addChild(g);
     state.gears.push({ gfx: g, dir: gs.dir });
   });
 
-  // Buhar Katmanı (Tahta arkasından sızan ince buhar)
   const steamLayer = new PIXI.Container();
   root.addChild(steamLayer);
 
   const boardGlow = new PIXI.Graphics();
   root.addChild(boardGlow);
 
-  // DÖVME DEMİR & PİRİNÇ TAHTA ÇERÇEVESİ
+  // YARI ŞEFFAF TAHTA ÇERÇEVESİ (Arka plan izgaranın içinden nefes alır)
   function drawBoardFrame() {
     const frame = new PIXI.Container();
-
     const outer = new PIXI.Graphics();
-    outer.roundRect(BOARD_X - 20, BOARD_Y - 20, BOARD_W + 40, BOARD_H + 40, 20)
-      .fill({ color: 0x0a0f19, alpha: 0.97 })
+    outer.roundRect(BOARD_X - 18, BOARD_Y - 18, BOARD_W + 36, BOARD_H + 36, 20)
+      .fill({ color: 0x090e17, alpha: 0.62 })
       .stroke({ width: 5.5, color: 0x8f621b, alpha: 1 });
-    outer.roundRect(BOARD_X - 16, BOARD_Y - 16, BOARD_W + 32, BOARD_H + 32, 16)
-      .stroke({ width: 2, color: 0xf6d379, alpha: 0.9 });
-    outer.roundRect(BOARD_X - 6, BOARD_Y - 6, BOARD_W + 12, BOARD_H + 12, 10)
-      .fill({ color: 0x070b13, alpha: 0.94 })
+    outer.roundRect(BOARD_X - 14, BOARD_Y - 14, BOARD_W + 28, BOARD_H + 28, 16)
+      .stroke({ width: 2, color: 0xf6d379, alpha: 0.92 });
+    outer.roundRect(BOARD_X - 4, BOARD_Y - 4, BOARD_W + 8, BOARD_H + 8, 10)
+      .fill({ color: 0x050912, alpha: 0.42 })
       .stroke({ width: 1.5, color: 0x5c3c11, alpha: 0.95 });
     frame.addChild(outer);
-
-    const cells = new PIXI.Graphics();
-    for (let c = 0; c < COLS; c++) {
-      const colColor = c % 2 === 0 ? 0x101726 : 0x0b101b;
-      cells.rect(BOARD_X + c * CELL_W, BOARD_Y, CELL_W, BOARD_H).fill({ color: colColor, alpha: 0.92 });
-      for (let r = 0; r < ROWS; r++) {
-        cells.roundRect(BOARD_X + c * CELL_W + 5, BOARD_Y + r * CELL_H + 5, CELL_W - 10, CELL_H - 10, 9)
-          .stroke({ width: 1, color: 0xc89336, alpha: 0.11 });
-      }
-    }
-    frame.addChild(cells);
 
     const dividers = new PIXI.Graphics();
     for (let c = 1; c < COLS; c++) {
       const x = BOARD_X + c * CELL_W;
       dividers.moveTo(x, BOARD_Y + 4).lineTo(x, BOARD_Y + BOARD_H - 4)
-        .stroke({ width: 2, color: 0xc89336, alpha: 0.36 });
+        .stroke({ width: 2, color: 0xc89336, alpha: 0.3 });
     }
     frame.addChild(dividers);
 
     const rivets = new PIXI.Graphics();
-    const pts = [
-      [BOARD_X - 10, BOARD_Y - 10], [BOARD_X + BOARD_W + 10, BOARD_Y - 10],
-      [BOARD_X - 10, BOARD_Y + BOARD_H + 10], [BOARD_X + BOARD_W + 10, BOARD_Y + BOARD_H + 10],
-      [BOARD_X + BOARD_W / 2, BOARD_Y - 12], [BOARD_X + BOARD_W / 2, BOARD_Y + BOARD_H + 12],
-      [BOARD_X - 12, BOARD_Y + BOARD_H / 2], [BOARD_X + BOARD_W + 12, BOARD_Y + BOARD_H / 2]
-    ];
-    pts.forEach(([x, y]) => {
+    [
+      [BOARD_X - 9, BOARD_Y - 9], [BOARD_X + BOARD_W + 9, BOARD_Y - 9],
+      [BOARD_X - 9, BOARD_Y + BOARD_H + 9], [BOARD_X + BOARD_W + 9, BOARD_Y + BOARD_H + 9],
+      [BOARD_X + BOARD_W / 2, BOARD_Y - 11], [BOARD_X + BOARD_W / 2, BOARD_Y + BOARD_H + 11],
+      [BOARD_X - 11, BOARD_Y + BOARD_H / 2], [BOARD_X + BOARD_W + 11, BOARD_Y + BOARD_H / 2]
+    ].forEach(([x, y]) => {
       rivets.circle(x, y, 5.5).fill({ color: 0xdba442 }).stroke({ width: 1.5, color: 0x4a2c08 });
       rivets.circle(x - 1.5, y - 1.5, 1.8).fill({ color: 0xfff3c4, alpha: 0.9 });
     });
@@ -359,7 +376,6 @@
   reelsClip.mask = clipMask;
   root.addChild(reelsClip);
 
-  // Katmanlar
   const teaseLayer = new PIXI.Container();
   teaseLayer.position.set(BOARD_X, BOARD_Y);
   root.addChild(teaseLayer);
@@ -388,50 +404,55 @@
   flashOverlay.alpha = 0;
   root.addChild(flashOverlay);
 
-  // --- AKILLI SEMBOL HÜCRESİ (Aura + Sprite + Yüksek Kontrastlı VS Rozeti) ---
+  // --- OYMALI TAŞ KARO (tile_bg.png) + SEMBOL HÜCRESİ ---
   function createSlot() {
     const box = new PIXI.Container();
 
+    // 1. Oymalı koyu taş & pirinç karo zemini
+    const tile = new PIXI.Sprite(state.textures.tile_bg || PIXI.Texture.EMPTY);
+    tile.anchor.set(0.5);
+    tile.width = CELL_W - 8;
+    tile.height = CELL_H - 8;
+    tile.alpha = 0.94;
+    box.addChild(tile);
+
+    // 2. Sembol sınıfına özel renk aurası
     const aura = new PIXI.Graphics();
     box.addChild(aura);
 
+    // 3. Sembol görseli
     const sp = new PIXI.Sprite();
     sp.anchor.set(0.5);
     box.addChild(sp);
 
-    // VS sembolü için dönen mavi-turuncu enerji halkası + parlak pirinç VS rozeti
+    // 4. VS için dönen mavi-turuncu enerji halkası + parlak pirinç VS rozeti
     const vsGroup = new PIXI.Container();
     vsGroup.visible = false;
 
     const vsRing = new PIXI.Graphics();
-    vsRing.arc(0, 0, 56, -Math.PI * 0.85, -Math.PI * 0.1)
-      .stroke({ width: 4.5, color: 0x49d6ff, alpha: 0.92, cap: 'round' });
-    vsRing.arc(0, 0, 56, Math.PI * 0.15, Math.PI * 0.9)
-      .stroke({ width: 4.5, color: 0xff6a1a, alpha: 0.92, cap: 'round' });
+    vsRing.arc(0, 0, 52, -Math.PI * 0.85, -Math.PI * 0.1)
+      .stroke({ width: 4, color: 0x49d6ff, alpha: 0.94, cap: 'round' });
+    vsRing.arc(0, 0, 52, Math.PI * 0.15, Math.PI * 0.9)
+      .stroke({ width: 4, color: 0xff6a1a, alpha: 0.94, cap: 'round' });
     vsGroup.addChild(vsRing);
 
     const vsPlate = new PIXI.Graphics();
-    vsPlate.roundRect(-34, 24, 68, 30, 8)
-      .fill({ color: 0x160c05, alpha: 0.94 })
-      .stroke({ width: 2.2, color: 0xfff0bc, alpha: 1 });
+    vsPlate.roundRect(-32, 22, 64, 28, 7)
+      .fill({ color: 0x160c05, alpha: 0.95 })
+      .stroke({ width: 2, color: 0xfff1bf, alpha: 1 });
     vsGroup.addChild(vsPlate);
 
     const vsText = new PIXI.Text({
       text: 'VS',
-      style: {
-        fontFamily: 'Cinzel', fontSize: 22, fontWeight: '900',
-        fill: 0xfff2c2, letterSpacing: 2,
-        stroke: { color: 0x993506, width: 4 }
-      }
+      style: { fontFamily: 'Cinzel', fontSize: 20, fontWeight: '900', fill: 0xfff2c2, letterSpacing: 2, stroke: { color: 0x993506, width: 4 } }
     });
     vsText.anchor.set(0.5);
-    vsText.position.set(0, 39);
+    vsText.position.set(0, 36);
     vsGroup.addChild(vsText);
 
     box.addChild(vsGroup);
-    state.vsEnergyRings.push(vsRing);
 
-    return { box, aura, sp, vsGroup, vsRing, symKey: 'L1', baseScale: 1 };
+    return { box, tile, aura, sp, vsGroup, vsRing, symKey: 'L1', baseScale: 1 };
   }
 
   function fitSlot(slot, symKey) {
@@ -439,30 +460,31 @@
     const style = SYMBOL_STYLE[symKey] || SYMBOL_STYLE.L1;
     const tex = state.textures[symKey];
 
+    if (state.textures.tile_bg) {
+      slot.tile.texture = state.textures.tile_bg;
+      slot.tile.width = CELL_W - 8;
+      slot.tile.height = CELL_H - 8;
+    }
+
     slot.sp.texture = tex || PIXI.Texture.EMPTY;
     const w = tex && tex.width ? tex.width : 512;
     const h = tex && tex.height ? tex.height : 512;
-    const sizeFactor = symKey.startsWith('L') ? 0.78 : 0.88;
-    const scale = Math.min((CELL_W * sizeFactor) / w, (CELL_H * sizeFactor) / h);
+    const factor = symKey.startsWith('L') ? 0.72 : 0.78;
+    const scale = Math.min((CELL_W * factor) / w, (CELL_H * factor) / h);
     slot.sp.scale.set(scale);
-    slot.sp.tint = style.tint;
     slot.baseScale = scale;
     slot.box.alpha = 1;
     slot.box.scale.set(1);
 
-    // Renkli arka aura çizimi
     slot.aura.clear();
     if (style.aura) {
       if (symKey === 'VS') {
-        slot.aura.circle(-14, -8, 42).fill({ color: 0x49d6ff, alpha: 0.24 });
-        slot.aura.circle(14, 8, 42).fill({ color: 0xff6a1a, alpha: 0.24 });
-        slot.aura.roundRect(-66, -60, 132, 120, 14).stroke({ width: 2.5, color: 0xf6d379, alpha: 0.7 });
+        slot.aura.circle(-12, -6, 38).fill({ color: 0x49d6ff, alpha: 0.25 });
+        slot.aura.circle(12, 6, 38).fill({ color: 0xff6a1a, alpha: 0.25 });
       } else {
-        slot.aura.circle(0, 0, 52).fill({ color: style.aura, alpha: style.alpha });
-        slot.aura.circle(0, 0, 34).fill({ color: 0xffffff, alpha: style.alpha * 0.35 });
+        slot.aura.circle(0, 0, 46).fill({ color: style.aura, alpha: style.alpha });
       }
     }
-
     slot.vsGroup.visible = (symKey === 'VS');
   }
 
@@ -472,24 +494,27 @@
     const colContainer = new PIXI.Container();
     colContainer.x = c * CELL_W;
     reelsClip.addChild(colContainer);
-    reels.push({ col: c, container: colContainer, slots: [], spinning: false, speed: 0 });
+    reels.push({ col: c, container: colContainer, slots: [], dropping: false });
+  }
+
+  function refreshVSRings() {
+    state.vsEnergyRings = reels.flatMap(r => r.slots.map(s => s.vsRing));
   }
 
   function populateInitialReels() {
-    state.vsEnergyRings = [];
     reels.forEach((reel, c) => {
       reel.container.removeChildren();
       reel.slots = [];
-      for (let r = -1; r <= ROWS; r++) {
-        const sym = (r >= 0 && r < ROWS) ? state.currentGrid[r][c] : SYMBOL_KEYS[Math.floor(Math.random() * 8)];
+      for (let r = 0; r < ROWS; r++) {
         const slot = createSlot();
         slot.box.x = CELL_W / 2;
         slot.box.y = r * CELL_H + CELL_H / 2;
-        fitSlot(slot, sym);
+        fitSlot(slot, state.currentGrid[r][c]);
         reel.container.addChild(slot.box);
         reel.slots.push(slot);
       }
     });
+    refreshVSRings();
   }
 
   // --- EFEKT SİSTEMLERİ ---
@@ -499,7 +524,7 @@
     state.shakeDuration = Math.max(state.shakeDuration, durationMs);
   }
 
-  function triggerFlash(alpha = 0.5) {
+  function triggerFlash(alpha = 0.45) {
     flashOverlay.alpha = Math.max(flashOverlay.alpha, alpha);
   }
 
@@ -510,24 +535,21 @@
     state.rings.push({ gfx: g, r: 16, maxR, color, life: 1 });
   }
 
-  function spawnSteamPuff(x, y, vx = 0, vy = -1.2) {
+  function spawnSteamPuff(x, y, vx = 0, vy = -1.1) {
     const g = new PIXI.Graphics();
-    g.circle(0, 0, 18).fill({ color: 0xdce8f8, alpha: 0.22 });
+    g.circle(0, 0, 18).fill({ color: 0xdce8f8, alpha: 0.2 });
     g.position.set(x, y);
     steamLayer.addChild(g);
     state.steamPuffs.push({ gfx: g, vx, vy, scale: 0.6, life: 1 });
   }
 
-  function spawnBurst(x, y, count = 28, colors = [0xfff0bc, 0xf6d379, 0xff7b29, 0xffffff]) {
+  function spawnBurst(x, y, count = 28, colors = [0xfff1bf, 0xf6d379, 0xff7b29, 0xffffff]) {
     for (let i = 0; i < count; i++) {
       const g = new PIXI.Graphics();
       const size = 2.2 + Math.random() * 4.8;
       const color = colors[Math.floor(Math.random() * colors.length)];
-      if (Math.random() < 0.48) {
-        g.rect(-size, -size * 0.42, size * 2, size * 0.84).fill({ color });
-      } else {
-        g.circle(0, 0, size).fill({ color });
-      }
+      if (Math.random() < 0.48) g.rect(-size, -size * 0.42, size * 2, size * 0.84).fill({ color });
+      else g.circle(0, 0, size).fill({ color });
       g.position.set(x, y);
       g.rotation = Math.random() * Math.PI * 2;
       fxLayer.addChild(g);
@@ -540,32 +562,12 @@
     }
   }
 
-  // 3D TAKLA ATAN ALTIN SİKKE YAĞMURU (Big / Mega / Epic Win)
-  function spawnCoinFountain(count = 14) {
-    for (let i = 0; i < count; i++) {
-      const c = new PIXI.Graphics();
-      c.circle(0, 0, 13).fill({ color: 0xf6c445 }).stroke({ width: 3, color: 0xfff3b8 });
-      c.circle(0, 0, 7).stroke({ width: 1.5, color: 0xb37412 });
-      c.position.set(STAGE_W * (0.2 + Math.random() * 0.6), STAGE_H + 18);
-      fxLayer.addChild(c);
-      state.coins.push({
-        gfx: c,
-        vx: (Math.random() - 0.5) * 9,
-        vy: -(11 + Math.random() * 8),
-        spin: Math.random() * Math.PI * 2,
-        spinSpd: 0.14 + Math.random() * 0.14,
-        rot: (Math.random() - 0.5) * 0.1
-      });
-    }
-  }
-
   function spawnFloatingWin(text, x, y) {
     const t = new PIXI.Text({
       text,
       style: {
-        fontFamily: 'Cinzel', fontSize: 40, fontWeight: '900',
-        fill: 0xfff4c8,
-        stroke: { color: 0x3b1803, width: 7 },
+        fontFamily: 'Cinzel', fontSize: 38, fontWeight: '900',
+        fill: 0xfff4c8, stroke: { color: 0x3b1803, width: 7 },
         dropShadow: { color: 0xff6a1a, blur: 14, distance: 0, alpha: 0.95 }
       }
     });
@@ -573,69 +575,41 @@
     t.position.set(x, y);
     t.scale.set(0.45);
     fxLayer.addChild(t);
-    state.floatingTexts.push({ txt: t, life: 1, vy: -0.75 });
+    state.floatingTexts.push({ txt: t, life: 1, vy: -0.7 });
   }
 
-  // --- ANA TICKER ---
+  // --- ANA PIXI TICKER ---
   app.ticker.add((ticker) => {
     const dt = ticker.deltaTime;
     const ms = ticker.deltaMS;
     state.pulseTime += ms * 0.005;
 
-    // 1. Dönen Steampunk Dişlileri
-    const anySpinning = reels.some(r => r.spinning);
-    const gearSpd = anySpinning
-      ? (state.inBonus ? 0.048 : 0.032)
-      : (state.inBonus ? 0.014 : 0.004);
+    const anyActive = reels.some(r => r.dropping);
+    const gearSpd = anyActive ? (state.inBonus ? 0.045 : 0.03) : (state.inBonus ? 0.013 : 0.004);
     state.gears.forEach((g) => {
       g.gfx.rotation += g.dir * gearSpd * dt;
       g.gfx.tint = state.inBonus ? 0xffb67a : 0xffffff;
     });
 
-    // 2. Periyodik İnce Buhar
-    if (Math.random() < (state.inBonus ? 0.05 : 0.016)) {
+    if (Math.random() < (state.inBonus ? 0.045 : 0.015)) {
       const leftSide = Math.random() < 0.5;
-      const sx = leftSide ? BOARD_X - 18 : BOARD_X + BOARD_W + 18;
-      const sy = BOARD_Y + 60 + Math.random() * (BOARD_H - 120);
-      spawnSteamPuff(sx, sy, leftSide ? -0.9 : 0.9, -1.1);
+      spawnSteamPuff(leftSide ? BOARD_X - 18 : BOARD_X + BOARD_W + 18, BOARD_Y + 60 + Math.random() * (BOARD_H - 120), leftSide ? -0.9 : 0.9, -1.1);
     }
 
-    // 3. VS Enerji Halkaları Dönüşü & Özel Sembol Nefesi
     state.vsEnergyRings.forEach((ring) => {
-      if (ring && !ring.destroyed) ring.rotation += 0.055 * dt;
+      if (ring && !ring.destroyed) ring.rotation += 0.05 * dt;
     });
 
-    // 4. Çerçeve Ambiyans Işığı
     boardGlow.clear();
-    const glowAlpha = state.inBonus
-      ? 0.24 + Math.sin(state.pulseTime * 1.8) * 0.1
-      : 0.08 + Math.sin(state.pulseTime * 0.9) * 0.03;
-    boardGlow.roundRect(BOARD_X - 28, BOARD_Y - 28, BOARD_W + 56, BOARD_H + 56, 26)
+    const glowAlpha = state.inBonus ? 0.24 + Math.sin(state.pulseTime * 1.8) * 0.1 : 0.08 + Math.sin(state.pulseTime * 0.9) * 0.03;
+    boardGlow.roundRect(BOARD_X - 26, BOARD_Y - 26, BOARD_W + 52, BOARD_H + 52, 24)
       .fill({ color: state.inBonus ? 0xff6a1a : 0xc89336, alpha: glowAlpha });
 
-    // 5. Makara Akışı + Motion Stretch
-    reels.forEach((reel) => {
-      if (!reel.spinning) return;
-      const step = reel.speed * dt;
-      reel.slots.forEach((slot) => {
-        slot.box.y += step;
-        if (slot.box.y > (ROWS + 0.5) * CELL_H) {
-          slot.box.y -= (ROWS + 2) * CELL_H;
-          const randKey = SYMBOL_KEYS[Math.floor(Math.random() * SYMBOL_KEYS.length)];
-          fitSlot(slot, randKey);
-          slot.sp.scale.y = slot.baseScale * 1.18;
-          slot.box.alpha = 0.88;
-        }
-      });
-    });
-
-    // 6. Kazanan Hücre Nabzı
     if (state.winningSlots.length) {
-      const p = 1.07 + Math.sin(state.pulseTime * 2.5) * 0.06;
+      const p = 1.06 + Math.sin(state.pulseTime * 2.4) * 0.05;
       state.winningSlots.forEach((slot) => slot.box.scale.set(p));
     }
 
-    // 7. Kamera Zoom & Sarsıntı
     state.zoom += (state.targetZoom - state.zoom) * 0.1 * dt;
     root.scale.set(state.zoom);
 
@@ -643,49 +617,35 @@
     if (state.shakeTime > 0) {
       state.shakeTime = Math.max(0, state.shakeTime - ms);
       const ratio = state.shakeTime / Math.max(1, state.shakeDuration);
-      const mag = state.shakeMag * ratio;
-      sx = (Math.random() - 0.5) * 2 * mag;
-      sy = (Math.random() - 0.5) * 2 * mag;
+      sx = (Math.random() - 0.5) * 2 * state.shakeMag * ratio;
+      sy = (Math.random() - 0.5) * 2 * state.shakeMag * ratio;
       if (state.shakeTime === 0) state.shakeMag = 0;
     }
     root.position.set(STAGE_W / 2 + sx, STAGE_H / 2 + sy);
 
-    // 8. Ekran Flash
     if (flashOverlay.alpha > 0.005) flashOverlay.alpha = Math.max(0, flashOverlay.alpha - 0.045 * dt);
     else flashOverlay.alpha = 0;
 
-    // 9. Buhar Güncelleme
     for (let i = state.steamPuffs.length - 1; i >= 0; i--) {
       const st = state.steamPuffs[i];
       st.gfx.x += st.vx * dt;
       st.gfx.y += st.vy * dt;
-      st.scale += 0.032 * dt;
+      st.scale += 0.03 * dt;
       st.gfx.scale.set(st.scale);
       st.life -= 0.018 * dt;
-      st.gfx.alpha = Math.max(0, st.life * 0.55);
-      if (st.life <= 0) {
-        steamLayer.removeChild(st.gfx);
-        st.gfx.destroy();
-        state.steamPuffs.splice(i, 1);
-      }
+      st.gfx.alpha = Math.max(0, st.life * 0.5);
+      if (st.life <= 0) { steamLayer.removeChild(st.gfx); st.gfx.destroy(); state.steamPuffs.splice(i, 1); }
     }
 
-    // 10. Şok Dalgaları
     for (let i = state.rings.length - 1; i >= 0; i--) {
       const rg = state.rings[i];
       rg.r += (rg.maxR - rg.r) * 0.16 * dt;
       rg.life -= 0.045 * dt;
       rg.gfx.clear();
-      if (rg.life > 0) {
-        rg.gfx.circle(0, 0, rg.r).stroke({ width: 6 * rg.life, color: rg.color, alpha: rg.life });
-      } else {
-        fxLayer.removeChild(rg.gfx);
-        rg.gfx.destroy();
-        state.rings.splice(i, 1);
-      }
+      if (rg.life > 0) rg.gfx.circle(0, 0, rg.r).stroke({ width: 6 * rg.life, color: rg.color, alpha: rg.life });
+      else { fxLayer.removeChild(rg.gfx); rg.gfx.destroy(); state.rings.splice(i, 1); }
     }
 
-    // 11. Kıvılcım Parçacıkları
     for (let i = state.particles.length - 1; i >= 0; i--) {
       const p = state.particles[i];
       p.vx *= 0.982;
@@ -695,55 +655,26 @@
       p.gfx.rotation += (p.vr || 0) * dt;
       p.life -= p.decay * dt;
       p.gfx.alpha = Math.max(0, p.life);
-      if (p.life <= 0) {
-        fxLayer.removeChild(p.gfx);
-        p.gfx.destroy();
-        state.particles.splice(i, 1);
-      }
+      if (p.life <= 0) { fxLayer.removeChild(p.gfx); p.gfx.destroy(); state.particles.splice(i, 1); }
     }
 
-    // 12. 3D Altın Sikkeler
-    for (let i = state.coins.length - 1; i >= 0; i--) {
-      const cn = state.coins[i];
-      cn.vy += 0.36 * dt;
-      cn.gfx.x += cn.vx * dt;
-      cn.gfx.y += cn.vy * dt;
-      cn.spin += cn.spinSpd * dt;
-      cn.gfx.scale.x = Math.cos(cn.spin);
-      cn.gfx.rotation += cn.rot * dt;
-      if (cn.gfx.y > STAGE_H + 50) {
-        fxLayer.removeChild(cn.gfx);
-        cn.gfx.destroy();
-        state.coins.splice(i, 1);
-      }
-    }
-
-    // 13. Uçan Kazanç Metinleri
     for (let i = state.floatingTexts.length - 1; i >= 0; i--) {
       const ft = state.floatingTexts[i];
       ft.txt.y += ft.vy * dt;
-      const targetScale = ft.life > 0.78 ? 1.12 : 1.0;
+      const targetScale = ft.life > 0.78 ? 1.1 : 1.0;
       ft.txt.scale.x += (targetScale - ft.txt.scale.x) * 0.2 * dt;
       ft.txt.scale.y = ft.txt.scale.x;
-      ft.life -= 0.017 * dt;
+      ft.life -= 0.016 * dt;
       ft.txt.alpha = Math.min(1, ft.life * 2.2);
-      if (ft.life <= 0) {
-        fxLayer.removeChild(ft.txt);
-        ft.txt.destroy();
-        state.floatingTexts.splice(i, 1);
-      }
+      if (ft.life <= 0) { fxLayer.removeChild(ft.txt); ft.txt.destroy(); state.floatingTexts.splice(i, 1); }
     }
 
-    // 14. Bonus Kor Kıvılcımları
-    if (state.inBonus && Math.random() < 0.3) {
+    if (state.inBonus && Math.random() < 0.28) {
       const g = new PIXI.Graphics();
-      g.circle(0, 0, 1.8 + Math.random() * 2.6).fill({ color: Math.random() < 0.55 ? 0xff7b29 : 0xfff0bc });
+      g.circle(0, 0, 1.8 + Math.random() * 2.5).fill({ color: Math.random() < 0.55 ? 0xff7b29 : 0xfff1bf });
       g.position.set(Math.random() * STAGE_W, STAGE_H + 6);
       fxLayer.addChild(g);
-      state.particles.push({
-        gfx: g, vx: (Math.random() - 0.5) * 1.4, vy: -(1.7 + Math.random() * 2.6),
-        vr: 0, gravity: -0.012, life: 0.95, decay: 0.008
-      });
+      state.particles.push({ gfx: g, vx: (Math.random() - 0.5) * 1.4, vy: -(1.7 + Math.random() * 2.5), vr: 0, gravity: -0.012, life: 0.95, decay: 0.008 });
     }
   });
 
@@ -757,6 +688,7 @@
     state.winningSlots = [];
     state.targetZoom = 1.0;
     $('win-banner').classList.add('hidden');
+    $('retrigger-banner').classList.add('hidden');
     reels.forEach(r => r.slots.forEach((slot) => {
       slot.box.alpha = 1;
       slot.box.scale.set(1);
@@ -773,98 +705,124 @@
       .stroke({ width: 2.5, color: 0xfff2c2, alpha: 0.85 });
     teaseLayer.addChild(g);
     state.targetZoom = 1.036;
-    spawnBurst(BOARD_X + col * CELL_W + CELL_W / 2, BOARD_Y + BOARD_H - 12, 18, [0xff6a1a, 0xfff0bc]);
+    spawnBurst(BOARD_X + col * CELL_W + CELL_W / 2, BOARD_Y + BOARD_H - 14, 18, [0xff6a1a, 0xfff1bf]);
   }
 
-  async function animateColumnStop(col, grid, scCountSoFar) {
+  // --- AŞAMA 3: WAYLANDERS TARZI AĞIR SÜTUN DÜŞÜŞ FİZİĞİ ---
+  async function animateColumnExit(col) {
     const reel = reels[col];
-    reel.spinning = false;
+    reel.dropping = true;
+    const dur = state.turbo || state.quickStop ? 140 : 250;
+    const startYs = reel.slots.map(s => s.box.y);
+    let elapsed = 0;
+    let last = performance.now();
+    await new Promise((resolve) => {
+      function tick(now) {
+        if (!state.paused) elapsed += Math.min(80, now - last);
+        last = now;
+        const p = Math.min(1, elapsed / dur);
+        const easeIn = p * p * 1.15;
+        reel.slots.forEach((slot, r) => {
+          slot.box.y = startYs[r] + easeIn * (BOARD_H + CELL_H);
+          slot.box.alpha = Math.max(0.25, 1 - p * 0.7);
+        });
+        if (p >= 1) return resolve();
+        requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    });
+  }
+
+  async function animateColumnDropIn(col, grid, scCountSoFar, teaseDelayMs = 0) {
+    const reel = reels[col];
     reel.container.removeChildren();
     reel.slots = [];
+
+    if (teaseDelayMs > 0) {
+      await gameSleep(teaseDelayMs);
+    }
 
     let colHasSC = false;
     let colHasVS = false;
     let scRow = 1;
     let vsRow = 1;
 
-    for (let r = -1; r <= ROWS; r++) {
-      const sym = (r >= 0 && r < ROWS) ? grid[r][col] : SYMBOL_KEYS[Math.floor(Math.random() * 8)];
-      if (r >= 0 && r < ROWS && sym === 'SC') { colHasSC = true; scRow = r; }
-      if (r >= 0 && r < ROWS && sym === 'VS') { colHasVS = true; vsRow = r; }
+    const targetYs = [];
+    const startYs = [];
+    for (let r = 0; r < ROWS; r++) {
+      const sym = grid[r][col];
+      if (sym === 'SC') { colHasSC = true; scRow = r; }
+      if (sym === 'VS') { colHasVS = true; vsRow = r; }
       const slot = createSlot();
+      const targetY = r * CELL_H + CELL_H / 2;
+      const startY = targetY - (BOARD_H + CELL_H * 1.15);
       slot.box.x = CELL_W / 2;
-      slot.box.y = r * CELL_H + CELL_H / 2 - 36;
+      slot.box.y = startY;
       fitSlot(slot, sym);
       reel.container.addChild(slot.box);
       reel.slots.push(slot);
+      targetYs.push(targetY);
+      startYs.push(startY);
     }
+    refreshVSRings();
 
-    // Aktif VS halkalarını güncel tut
-    state.vsEnergyRings = reels.flatMap(r => r.slots.map(s => s.vsRing));
+    const dropDur = state.turbo || state.quickStop ? 185 : 350;
+    let elapsed = 0;
+    let last = performance.now();
+    let landedSfxPlayed = false;
 
-    AUDIO.playSfx('stop', { volume: 0.85 });
+    await new Promise((resolve) => {
+      function tick(now) {
+        if (!state.paused) elapsed += Math.min(80, now - last);
+        last = now;
+        const p = Math.min(1, elapsed / dropDur);
+        // Ağır yerçekimi düşüşü + tok elastik oturuş (easeOutBack)
+        const c1 = 1.35;
+        const c3 = c1 + 1;
+        const eased = 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2);
+
+        reel.slots.forEach((slot, r) => {
+          slot.box.y = startYs[r] + (targetYs[r] - startYs[r]) * eased;
+        });
+
+        if (!landedSfxPlayed && p >= 0.78) {
+          landedSfxPlayed = true;
+          AUDIO.playSfx('stop', { volume: 1.0, rate: 0.94 + col * 0.03 });
+        }
+        if (p >= 1) return resolve();
+        requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+    });
+
+    reel.slots.forEach((slot, r) => { slot.box.y = targetYs[r]; });
+    reel.dropping = false;
+
     if (colHasSC) {
-      const pitch = scCountSoFar === 0 ? 1.0 : scCountSoFar === 1 ? 1.15 : 1.32;
-      AUDIO.playSfx('scatter_land', { volume: 0.95, rate: pitch });
+      const pitch = scCountSoFar === 0 ? 1.0 : scCountSoFar === 1 ? 1.16 : 1.34;
+      AUDIO.playSfx('scatter_land', { volume: 1.0, rate: pitch });
       const cx = BOARD_X + col * CELL_W + CELL_W / 2;
       const cy = BOARD_Y + scRow * CELL_H + CELL_H / 2;
-      spawnShockwave(cx, cy, 0xffae34, 120);
-      spawnBurst(cx, cy, 28, [0xfff0bc, 0xff7b29, 0x49d6ff]);
-      triggerShake(6, 180);
+      spawnShockwave(cx, cy, 0xffae34, 125);
+      spawnBurst(cx, cy, 28, [0xfff1bf, 0xff7b29, 0x49d6ff]);
+      triggerShake(6, 190);
     }
     if (colHasVS) {
       const cx = BOARD_X + col * CELL_W + CELL_W / 2;
       const cy = BOARD_Y + vsRow * CELL_H + CELL_H / 2;
-      spawnShockwave(cx, cy, 0x49d6ff, 115);
-      spawnBurst(cx, cy, 24, [0x49d6ff, 0xff6a1a, 0xfff0bc]);
+      spawnShockwave(cx, cy, 0x49d6ff, 120);
+      spawnBurst(cx, cy, 26, [0x49d6ff, 0xff6a1a, 0xfff1bf]);
     }
-
-    const frames = state.turbo ? 6 : 11;
-    for (let f = 1; f <= frames; f++) {
-      const t = f / frames;
-      const easeOutBack = 1 + 2.2 * Math.pow(t - 1, 3) + 1.2 * Math.pow(t - 1, 2);
-      const offset = -36 * (1 - easeOutBack);
-      reel.slots.forEach((slot, idx) => {
-        slot.box.y = (idx - 1) * CELL_H + CELL_H / 2 + offset;
-      });
-      await sleep(15);
-    }
-    reel.slots.forEach((slot, idx) => {
-      slot.box.y = (idx - 1) * CELL_H + CELL_H / 2;
-    });
     return colHasSC;
   }
 
-  // --- AAA ZIRHLI VS DÜELLO AFİŞİ (Düz Kutu Yok!) ---
-  function drawDuelGradientPanel(gfx, w, h, topPalette, botPalette, borderColor) {
-    const halfH = h / 2;
-    const bands = 10;
-    for (let i = 0; i < bands; i++) {
-      const yTop = 6 + (i / bands) * (halfH - 6);
-      const bandH = (halfH - 6) / bands + 1;
-      gfx.rect(6, yTop, w - 12, bandH).fill({ color: topPalette[i % topPalette.length], alpha: 0.96 });
-
-      const yBot = halfH + (i / bands) * (halfH - 6);
-      gfx.rect(6, yBot, w - 12, bandH).fill({ color: botPalette[i % botPalette.length], alpha: 0.96 });
-    }
-    // Çapraz fırçalanmış çelik dokusu
-    for (let y = 16; y < h - 16; y += 22) {
-      gfx.moveTo(10, y).lineTo(w - 10, y + 12).stroke({ width: 1, color: 0xffffff, alpha: 0.06 });
-    }
-    // Dövme pirinç dış ve iç çerçeve + köşe perçinleri
-    gfx.roundRect(5, 5, w - 10, h - 10, 12).stroke({ width: 4.5, color: borderColor, alpha: 1 });
-    gfx.roundRect(11, 11, w - 22, h - 22, 8).stroke({ width: 1.5, color: 0xfff0bc, alpha: 0.5 });
-    [[14, 14], [w - 14, 14], [14, h - 14], [w - 14, h - 14]].forEach(([rx, ry]) => {
-      gfx.circle(rx, ry, 4).fill({ color: 0xf6d379 }).stroke({ width: 1, color: 0x3b2206 });
-    });
-  }
-
+  // --- AAA GERÇEK AFİŞLİ (vs_banner.png) SİNEMATİK VS DÜELLO ---
   async function playVSDuels(vsReels) {
     const cols = Object.keys(vsReels).map(Number).sort((a, b) => a - b);
     if (!cols.length) return;
 
     AUDIO.duckMusic(true);
-    state.targetZoom = 1.025;
+    state.targetZoom = 1.028;
 
     for (const col of cols) {
       const info = vsReels[String(col)];
@@ -875,42 +833,49 @@
       const centerX = BOARD_X + col * CELL_W + CELL_W / 2;
       const centerY = BOARD_Y + BOARD_H / 2;
 
-      // 1. Mekanik Kasa Açılımı + Buhar
-      AUDIO.playSfx('vs_expand', { volume: 0.95 });
+      // 1. Afişin yukarıdan aşağıya zırhlı açılışı
+      AUDIO.playSfx('vs_expand', { volume: 1.0 });
       spawnSteamPuff(centerX - 30, centerY, -1.4, -0.6);
       spawnSteamPuff(centerX + 30, centerY, 1.4, -0.6);
-      spawnBurst(centerX, centerY, 26, [0x49d6ff, 0xff7b29, 0xfff0bc]);
+      spawnBurst(centerX, centerY, 28, [0x49d6ff, 0xff7b29, 0xfff1bf]);
 
       const duelArena = new PIXI.Container();
       duelArena.pivot.set(CELL_W / 2, BOARD_H / 2);
       duelArena.position.set(CELL_W / 2, BOARD_H / 2);
-      duelArena.scale.y = 0.05;
+      duelArena.scale.y = 0.06;
       colBox.addChild(duelArena);
 
-      const arenaGfx = new PIXI.Graphics();
-      const blueBands = [0x091c30, 0x0d2842, 0x113659, 0x16446e, 0x1b5485, 0x1e6094, 0x1b5485, 0x16446e, 0x12385c, 0x0e2c4a];
-      const fireBands = [0x3d1205, 0x521907, 0x6b2209, 0x822c0c, 0x99370f, 0xa84112, 0x8f320d, 0x702409, 0x521907, 0x3b1104];
-      drawDuelGradientPanel(arenaGfx, CELL_W, BOARD_H, blueBands, fireBands, 0xf6d379);
+      if (state.textures.vs_banner) {
+        const bannerSp = new PIXI.Sprite(state.textures.vs_banner);
+        bannerSp.position.set(5, 5);
+        bannerSp.width = CELL_W - 10;
+        bannerSp.height = BOARD_H - 10;
+        duelArena.addChild(bannerSp);
+      } else {
+        const fallback = new PIXI.Graphics();
+        fallback.roundRect(5, 5, CELL_W - 10, BOARD_H - 10, 10).fill({ color: 0x1a1410, alpha: 0.96 });
+        duelArena.addChild(fallback);
+      }
 
-      // Orta enerji hattı
-      arenaGfx.moveTo(8, BOARD_H / 2).lineTo(CELL_W - 8, BOARD_H / 2)
-        .stroke({ width: 6, color: 0xfff0bc, alpha: 0.95 });
-      duelArena.addChild(arenaGfx);
+      const borderGfx = new PIXI.Graphics();
+      borderGfx.roundRect(5, 5, CELL_W - 10, BOARD_H - 10, 10).stroke({ width: 4.5, color: 0xf6d379 });
+      duelArena.addChild(borderGfx);
 
-      for (let f = 1; f <= 9; f++) {
-        const p = f / 9;
-        duelArena.scale.y = 0.05 + 0.95 * (1 - Math.pow(1 - p, 3));
-        await sleep(state.turbo ? 12 : 18);
+      const unrollSteps = state.turbo ? 7 : 12;
+      for (let f = 1; f <= unrollSteps; f++) {
+        const p = f / unrollSteps;
+        duelArena.scale.y = 0.06 + 0.94 * (1 - Math.pow(1 - p, 3));
+        await gameSleep(20);
       }
       duelArena.scale.y = 1;
 
-      // Üst & Alt Çarpanlar
+      // Üst (Mavi) & Alt (Turuncu) Çarpanlar
       const topTxt = new PIXI.Text({
         text: `${info.left}×`,
         style: {
-          fontFamily: 'Cinzel', fontSize: 50, fontWeight: '900', fill: 0x8ef0ff,
+          fontFamily: 'Cinzel', fontSize: 52, fontWeight: '900', fill: 0x9cf3ff,
           stroke: { color: 0x041526, width: 7 },
-          dropShadow: { color: 0x49d6ff, blur: 14, distance: 0, alpha: 1 }
+          dropShadow: { color: 0x49d6ff, blur: 16, distance: 0, alpha: 1 }
         }
       });
       topTxt.anchor.set(0.5);
@@ -919,9 +884,9 @@
       const botTxt = new PIXI.Text({
         text: `${info.right}×`,
         style: {
-          fontFamily: 'Cinzel', fontSize: 50, fontWeight: '900', fill: 0xffc078,
+          fontFamily: 'Cinzel', fontSize: 52, fontWeight: '900', fill: 0xffc680,
           stroke: { color: 0x2b0a02, width: 7 },
-          dropShadow: { color: 0xff6a1a, blur: 14, distance: 0, alpha: 1 }
+          dropShadow: { color: 0xff6a1a, blur: 16, distance: 0, alpha: 1 }
         }
       });
       botTxt.anchor.set(0.5);
@@ -929,15 +894,15 @@
 
       const emblem = new PIXI.Sprite(state.textures.VS || PIXI.Texture.EMPTY);
       emblem.anchor.set(0.5);
-      const es = Math.min(124 / (emblem.texture.width || 512), 124 / (emblem.texture.height || 512));
+      const es = Math.min(118 / (emblem.texture.width || 512), 118 / (emblem.texture.height || 512));
       emblem.scale.set(es);
       emblem.position.set(CELL_W / 2, BOARD_H / 2);
 
       const sparkArc = new PIXI.Graphics();
       duelArena.addChild(topTxt, botTxt, emblem, sparkArc);
 
-      // Elektrik arkı ve düello çarpışma gerilimi
-      const tensionSteps = state.turbo ? 6 : 13;
+      // Dramatik gerilim ve elektrik arkı (Acele etmeden hissettirir)
+      const tensionSteps = state.turbo ? 7 : 18;
       for (let s = 0; s < tensionSteps; s++) {
         const j = (s / tensionSteps) * 6;
         emblem.x = CELL_W / 2 + (Math.random() - 0.5) * j * 2;
@@ -946,106 +911,98 @@
         botTxt.scale.set(1 + (s % 2 === 1 ? 0.1 : -0.04));
 
         sparkArc.clear();
-        sparkArc.moveTo(14, BOARD_H / 2);
+        sparkArc.moveTo(12, BOARD_H / 2);
         for (let seg = 1; seg <= 5; seg++) {
-          sparkArc.lineTo(14 + (CELL_W - 28) * (seg / 5), BOARD_H / 2 + (Math.random() - 0.5) * 26);
+          sparkArc.lineTo(12 + (CELL_W - 24) * (seg / 5), BOARD_H / 2 + (Math.random() - 0.5) * 28);
         }
-        sparkArc.stroke({ width: 3, color: s % 2 === 0 ? 0x8ef0ff : 0xffb36b, alpha: 0.95 });
-        await sleep(30);
+        sparkArc.stroke({ width: 3.2, color: s % 2 === 0 ? 0x9cf3ff : 0xffb36b, alpha: 0.95 });
+        await gameSleep(34);
       }
 
-      // 2. ÇİFT ÇAPRAZ KILIÇ KESİĞİ + FLASH + ÇİFT ŞOK DALGASI + 64 KIVILCIM
+      // 2. ÇİFT ÇAPRAZ KILIÇ KESİĞİ + FLASH + ŞOK DALGASI + 68 KIVILCIM
       AUDIO.playSfx('vs_clash', { volume: 1.0 });
-      triggerShake(15, 400);
-      triggerFlash(0.46);
-      spawnShockwave(centerX, centerY, 0xfff0bc, 210);
-      spawnShockwave(centerX, centerY, 0xff6a1a, 145);
-      spawnBurst(centerX, centerY, 64, [0xffffff, 0xfff0bc, 0xff7b29, 0x49d6ff]);
+      triggerShake(15, 420);
+      triggerFlash(0.48);
+      spawnShockwave(centerX, centerY, 0xfff1bf, 215);
+      spawnShockwave(centerX, centerY, 0xff6a1a, 150);
+      spawnBurst(centerX, centerY, 68, [0xffffff, 0xfff1bf, 0xff7b29, 0x49d6ff]);
 
       const slash = new PIXI.Graphics();
-      slash.moveTo(-12, BOARD_H * 0.72).lineTo(CELL_W + 12, BOARD_H * 0.28)
-        .stroke({ width: 16, color: 0xffae34, alpha: 0.8, cap: 'round' });
-      slash.moveTo(-12, BOARD_H * 0.28).lineTo(CELL_W + 12, BOARD_H * 0.72)
-        .stroke({ width: 14, color: 0x49d6ff, alpha: 0.75, cap: 'round' });
-      slash.moveTo(-12, BOARD_H * 0.72).lineTo(CELL_W + 12, BOARD_H * 0.28)
-        .stroke({ width: 6, color: 0xffffff, alpha: 1, cap: 'round' });
-      slash.moveTo(-12, BOARD_H * 0.28).lineTo(CELL_W + 12, BOARD_H * 0.72)
-        .stroke({ width: 5, color: 0xffffff, alpha: 1, cap: 'round' });
+      slash.moveTo(-12, BOARD_H * 0.72).lineTo(CELL_W + 12, BOARD_H * 0.28).stroke({ width: 16, color: 0xffae34, alpha: 0.85, cap: 'round' });
+      slash.moveTo(-12, BOARD_H * 0.28).lineTo(CELL_W + 12, BOARD_H * 0.72).stroke({ width: 14, color: 0x49d6ff, alpha: 0.8, cap: 'round' });
+      slash.moveTo(-12, BOARD_H * 0.72).lineTo(CELL_W + 12, BOARD_H * 0.28).stroke({ width: 6, color: 0xffffff, alpha: 1, cap: 'round' });
+      slash.moveTo(-12, BOARD_H * 0.28).lineTo(CELL_W + 12, BOARD_H * 0.72).stroke({ width: 5, color: 0xffffff, alpha: 1, cap: 'round' });
       colBox.addChild(slash);
 
       for (let f = 1; f <= 7; f++) {
         slash.alpha = 1 - f / 7;
-        await sleep(22);
+        await gameSleep(24);
       }
       colBox.removeChild(slash);
       slash.destroy();
 
-      // 3. KAZANAN WILD REEL MÜHRÜ
+      // 3. KAZANAN ÇARPAN MÜHRÜ (Afiş korunur, üstüne okunaklı zırhlı madalyon oturur)
       const isBlueWin = info.winMult === info.left && info.left !== info.right;
-      const winPalette = isBlueWin
-        ? [0x0b2238, 0x10304f, 0x154169, 0x1a5180, 0x154169, 0x10304f, 0x0b2238, 0x091b2e, 0x0c243b, 0x113352]
-        : [0x2e1104, 0x471a06, 0x632509, 0x7d310c, 0x632509, 0x471a06, 0x361405, 0x260e03, 0x3d1706, 0x542008];
       const winAccent = isBlueWin ? 0x49d6ff : 0xff9f43;
+      duelArena.removeChild(topTxt, botTxt, emblem, sparkArc);
 
-      duelArena.removeChildren();
-      const finalBg = new PIXI.Graphics();
-      drawDuelGradientPanel(finalBg, CELL_W, BOARD_H, winPalette, winPalette, 0xfff0bc);
-      // Merkez madalyon halesi
-      finalBg.circle(CELL_W / 2, BOARD_H * 0.72, 54).fill({ color: winAccent, alpha: 0.22 });
-      duelArena.addChild(finalBg);
+      const tintShade = new PIXI.Graphics();
+      tintShade.roundRect(6, 6, CELL_W - 12, BOARD_H - 12, 10)
+        .fill({ color: isBlueWin ? 0x071e36 : 0x2e0e03, alpha: 0.48 });
+      duelArena.addChild(tintShade);
 
-      if (state.textures.VS && state.textures.VS !== PIXI.Texture.EMPTY) {
-        const bgEmb = new PIXI.Sprite(state.textures.VS);
-        bgEmb.anchor.set(0.5);
-        const s2 = Math.min(132 / (bgEmb.texture.width || 512), 132 / (bgEmb.texture.height || 512));
-        bgEmb.scale.set(s2);
-        bgEmb.position.set(CELL_W / 2, BOARD_H * 0.25);
-        duelArena.addChild(bgEmb);
-      }
+      const medallion = new PIXI.Graphics();
+      medallion.circle(CELL_W / 2, BOARD_H * 0.56, 58)
+        .fill({ color: 0x0d0a07, alpha: 0.86 })
+        .stroke({ width: 4, color: 0xf6d379 });
+      medallion.circle(CELL_W / 2, BOARD_H * 0.56, 50)
+        .stroke({ width: 2, color: winAccent, alpha: 0.85 });
+      duelArena.addChild(medallion);
 
       const wildPlate = new PIXI.Graphics();
-      wildPlate.roundRect(18, BOARD_H * 0.46, CELL_W - 36, 36, 8)
-        .fill({ color: 0x0d0905, alpha: 0.9 })
-        .stroke({ width: 2, color: 0xf6d379 });
+      wildPlate.roundRect(16, BOARD_H * 0.31, CELL_W - 32, 34, 8)
+        .fill({ color: 0x0e0905, alpha: 0.92 })
+        .stroke({ width: 2, color: 0xfff1bf });
       duelArena.addChild(wildPlate);
 
       const winLabel = new PIXI.Text({
         text: 'WILD REEL',
-        style: { fontFamily: 'Cinzel', fontSize: 17, fontWeight: '900', fill: 0xf6d379, letterSpacing: 2 }
+        style: { fontFamily: 'Cinzel', fontSize: 16, fontWeight: '900', fill: 0xfff1bf, letterSpacing: 2 }
       });
       winLabel.anchor.set(0.5);
-      winLabel.position.set(CELL_W / 2, BOARD_H * 0.46 + 18);
+      winLabel.position.set(CELL_W / 2, BOARD_H * 0.31 + 17);
 
       const winMultTxt = new PIXI.Text({
         text: `${info.winMult}×`,
         style: {
-          fontFamily: 'Cinzel', fontSize: 64, fontWeight: '900', fill: 0xffffff,
-          stroke: { color: isBlueWin ? 0x062945 : 0x5e2204, width: 8 },
-          dropShadow: { color: winAccent, blur: 18, distance: 0, alpha: 1 }
+          fontFamily: 'Cinzel', fontSize: 56, fontWeight: '900', fill: 0xffffff,
+          stroke: { color: isBlueWin ? 0x062945 : 0x5e2204, width: 7 },
+          dropShadow: { color: winAccent, blur: 16, distance: 0, alpha: 1 }
         }
       });
       winMultTxt.anchor.set(0.5);
-      winMultTxt.position.set(CELL_W / 2, BOARD_H * 0.72);
+      winMultTxt.position.set(CELL_W / 2, BOARD_H * 0.56);
       winMultTxt.scale.set(0.3);
 
       duelArena.addChild(winLabel, winMultTxt);
 
-      for (let f = 1; f <= 8; f++) {
-        const t = f / 8;
+      for (let f = 1; f <= 9; f++) {
+        const t = f / 9;
         const pop = 1 + 1.9 * Math.pow(t - 1, 3) + 0.95 * Math.pow(t - 1, 2);
         winMultTxt.scale.set(0.3 + 0.7 * pop);
-        await sleep(16);
+        await gameSleep(18);
       }
       winMultTxt.scale.set(1);
 
-      await sleep(state.turbo ? 180 : 360);
+      // Oyuncunun çarpanı net görmesi için nefes payı
+      await gameSleep(state.turbo ? 240 : 540);
     }
 
     state.targetZoom = 1.0;
     AUDIO.duckMusic(false);
   }
 
-  // --- ÖDEME ÇİZGİLERİ (ÖNCE TOPLU PARLAMA, ARDINDAN TEMİZ SIRALI DÖNGÜ) ---
+  // --- ÖDEME ÇİZGİLERİ & SADE ALTIN +$0.10 ROZETİ ---
   function renderWinSubset(winList, bet, showSingleBadge = false) {
     winFrameLayer.removeChildren();
     lineLayer.removeChildren();
@@ -1059,34 +1016,29 @@
 
     state.winningSlots = [];
     reels.forEach((reel, c) => {
-      reel.slots.forEach((slot, idx) => {
-        const row = idx - 1;
-        if (row < 0 || row >= ROWS) return;
-        const isHit = hitCells.has(`${c}_${row}`);
-        slot.box.alpha = isHit ? 1.0 : 0.3;
+      reel.slots.forEach((slot, r) => {
+        const isHit = hitCells.has(`${c}_${r}`);
+        slot.box.alpha = isHit ? 1.0 : 0.32;
         if (isHit) state.winningSlots.push(slot);
         else slot.box.scale.set(1);
       });
     });
 
-    // Altın hücre çerçeveleri
     const framesGfx = new PIXI.Graphics();
     hitCells.forEach((key) => {
       const [c, r] = key.split('_').map(Number);
-      const x = c * CELL_W + 6;
-      const y = r * CELL_H + 6;
-      framesGfx.roundRect(x, y, CELL_W - 12, CELL_H - 12, 12)
-        .fill({ color: 0xf6d379, alpha: 0.11 })
-        .stroke({ width: 5, color: 0xff8c24, alpha: 0.48 });
-      framesGfx.roundRect(x + 2, y + 2, CELL_W - 16, CELL_H - 16, 10)
-        .stroke({ width: 2.5, color: 0xfff0bc, alpha: 0.96 });
+      const x = c * CELL_W + 5;
+      const y = r * CELL_H + 5;
+      framesGfx.roundRect(x, y, CELL_W - 10, CELL_H - 10, 12)
+        .fill({ color: 0xf6d379, alpha: 0.12 })
+        .stroke({ width: 5, color: 0xff8c24, alpha: 0.5 });
+      framesGfx.roundRect(x + 2, y + 2, CELL_W - 14, CELL_H - 14, 10)
+        .stroke({ width: 2.5, color: 0xfff1bf, alpha: 0.96 });
     });
     winFrameLayer.addChild(framesGfx);
 
-    // Çizgiler (Toplu görünümde sade incelikte, tekil görünümde güçlü neon)
-    const glowW = showSingleBadge ? 11 : 7;
-    const coreW = showSingleBadge ? 3.8 : 2.2;
-    const lineAlpha = showSingleBadge ? 0.55 : 0.3;
+    const glowW = showSingleBadge ? 10 : 6;
+    const coreW = showSingleBadge ? 3.6 : 2.1;
 
     winList.forEach((w) => {
       const line = PAYLINES[w.line];
@@ -1098,25 +1050,24 @@
         if (c === 0) g.moveTo(x, y);
         else g.lineTo(x, y);
       }
-      g.stroke({ width: glowW, color, alpha: lineAlpha, join: 'round', cap: 'round' });
+      g.stroke({ width: glowW, color, alpha: showSingleBadge ? 0.55 : 0.28, join: 'round', cap: 'round' });
       for (let c = 0; c < w.count; c++) {
         const x = c * CELL_W + CELL_W / 2;
         const y = line[c] * CELL_H + CELL_H / 2;
         if (c === 0) g.moveTo(x, y);
         else g.lineTo(x, y);
       }
-      g.stroke({ width: coreW, color: 0xfff8dc, alpha: showSingleBadge ? 0.96 : 0.72, join: 'round', cap: 'round' });
-
+      g.stroke({ width: coreW, color: 0xfff8dc, alpha: showSingleBadge ? 0.96 : 0.7, join: 'round', cap: 'round' });
       if (showSingleBadge) {
         for (let c = 0; c < w.count; c++) {
-          g.circle(c * CELL_W + CELL_W / 2, line[c] * CELL_H + CELL_H / 2, 5.5)
+          g.circle(c * CELL_W + CELL_W / 2, line[c] * CELL_H + CELL_H / 2, 5)
             .fill({ color: 0xffffff }).stroke({ width: 2, color });
         }
       }
       lineLayer.addChild(g);
     });
 
-    // Tekil çizgi kazanç etiketi
+    // SADE ALTIN KAZANÇ ROZETİ ("LINE #11" KALDIRILDI!)
     if (showSingleBadge && winList.length === 1) {
       const w = winList[0];
       const line = PAYLINES[w.line];
@@ -1125,17 +1076,21 @@
       const by = line[midCol] * CELL_H + CELL_H / 2;
 
       const labelTxt = new PIXI.Text({
-        text: `LINE #${w.line + 1}  +${RGS.formatMoney(w.win * bet)}`,
-        style: { fontFamily: 'Cinzel', fontSize: 18, fontWeight: '900', fill: 0xfff4c8 }
+        text: `+${RGS.formatMoney(w.win * bet)}`,
+        style: {
+          fontFamily: 'Cinzel', fontSize: 22, fontWeight: '900',
+          fill: 0xfff4c8, stroke: { color: 0x3b1803, width: 5 },
+          dropShadow: { color: 0xff6a1a, blur: 10, distance: 0 }
+        }
       });
       labelTxt.anchor.set(0.5);
-      const pw = Math.max(150, labelTxt.width + 26);
+      const pw = Math.max(96, labelTxt.width + 28);
       const pill = new PIXI.Graphics();
-      pill.roundRect(-pw / 2, -17, pw, 34, 17)
-        .fill({ color: 0x170d06, alpha: 0.94 })
-        .stroke({ width: 2, color: 0xf6d379 });
+      pill.roundRect(-pw / 2, -18, pw, 36, 18)
+        .fill({ color: 0x1c0f05, alpha: 0.92 })
+        .stroke({ width: 2.2, color: 0xf6d379 });
       const badge = new PIXI.Container();
-      badge.position.set(Math.max(pw / 2 + 8, Math.min(BOARD_W - pw / 2 - 8, bx)), Math.max(24, by));
+      badge.position.set(Math.max(pw / 2 + 8, Math.min(BOARD_W - pw / 2 - 8, bx)), Math.max(26, by));
       badge.addChild(pill, labelTxt);
       lineBadgeLayer.addChild(badge);
     }
@@ -1147,43 +1102,165 @@
     while (state.cycleToken === token && !state.spinning) {
       renderWinSubset([wins[idx]], bet, true);
       idx = (idx + 1) % wins.length;
-      await sleep(1150);
+      await gameSleep(1250);
     }
   }
 
   async function showWinLines(wins, winMoney, bet, allowIdleCycle = false) {
     if (!wins.length || winMoney <= 0) return;
 
-    AUDIO.playSfx('win', { volume: 0.92 });
+    AUDIO.playSfx('win', { volume: 1.0 });
     $('win-banner-amount').textContent = RGS.formatMoney(winMoney);
     $('win-banner').classList.remove('hidden');
 
-    // 1. Kısa toplu parlama + üst bölgede temiz uçan kazanç
     renderWinSubset(wins, bet, wins.length === 1);
-    spawnFloatingWin(`+${RGS.formatMoney(winMoney)}`, STAGE_W / 2, BOARD_Y + 46);
-    spawnBurst(STAGE_W / 2, BOARD_Y + 60, 26, [0xfff0bc, 0xf6d379, 0xff7b29]);
+    spawnFloatingWin(`+${RGS.formatMoney(winMoney)}`, STAGE_W / 2, STAGE_H / 2);
+    spawnBurst(STAGE_W / 2, STAGE_H / 2, 26, [0xfff1bf, 0xf6d379, 0xff7b29]);
 
     state.skipWin = false;
-    const waitTotal = state.turbo ? 420 : 880;
-    const t0 = performance.now();
-    while (!state.skipWin && performance.now() - t0 < waitTotal) {
-      await sleep(35);
+    const waitTotal = state.turbo ? 460 : 1080;
+    let waited = 0;
+    while (!state.skipWin && waited < waitTotal) {
+      await gameSleep(40);
+      waited += 40;
     }
 
-    // 2. Temel oyunda boşta kalınca kazanan çizgileri tek tek sırayla döndür
     if (allowIdleCycle && wins.length > 1 && !state.skipWin) {
-      const token = state.cycleToken;
-      startIdleWinCycle(wins, bet, token);
+      startIdleWinCycle(wins, bet, state.cycleToken);
     }
   }
 
-  // --- AAA KADEMELİ BIG / MEGA / EPIC / MAX WIN + 3D ALTIN SİKKE YAĞMURU ---
+  // --- ÖN KATMAN 3D ALTIN SİKKE YAĞMURU (BIG / MEGA / EPIC / MAX WIN) ---
   function getWinTier(mult) {
     if (mult >= 12500) return 'MAX WIN!';
     if (mult >= 60) return 'EPIC WIN';
     if (mult >= 30) return 'MEGA WIN';
     return 'BIG WIN';
   }
+
+  function createCoinRainController() {
+    const canvas = $('bigwin-fx-canvas');
+    const ctx = canvas.getContext('2d');
+    const coins = [];
+    const sparks = [];
+    let running = false;
+
+    function resize() {
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.floor(window.innerWidth * dpr);
+      canvas.height = Math.floor(window.innerHeight * dpr);
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    function spawn(count = 16) {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      for (let i = 0; i < count; i++) {
+        coins.push({
+          x: w * (0.15 + Math.random() * 0.7),
+          y: h + 20 + Math.random() * 40,
+          vx: (Math.random() - 0.5) * 9,
+          vy: -(11 + Math.random() * 9.5),
+          r: 12 + Math.random() * 7,
+          spin: Math.random() * Math.PI * 2,
+          spinSpd: 0.14 + Math.random() * 0.16,
+          rot: (Math.random() - 0.5) * 0.08,
+          angle: Math.random() * Math.PI
+        });
+      }
+      for (let j = 0; j < count; j++) {
+        sparks.push({
+          x: w * 0.5 + (Math.random() - 0.5) * 260,
+          y: h * 0.5 + (Math.random() - 0.5) * 140,
+          vx: (Math.random() - 0.5) * 11,
+          vy: (Math.random() - 0.5) * 11 - 2,
+          life: 1,
+          size: 2.5 + Math.random() * 3.5
+        });
+      }
+    }
+
+    function loop() {
+      if (!running) return;
+      requestAnimationFrame(loop);
+      if (state.paused) return;
+
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      ctx.clearRect(0, 0, w, h);
+
+      for (let i = coins.length - 1; i >= 0; i--) {
+        const c = coins[i];
+        c.vy += 0.34;
+        c.x += c.vx;
+        c.y += c.vy;
+        c.spin += c.spinSpd;
+        c.angle += c.rot;
+
+        const sx = Math.cos(c.spin);
+        ctx.save();
+        ctx.translate(c.x, c.y);
+        ctx.rotate(c.angle);
+        ctx.scale(Math.max(0.14, Math.abs(sx)), 1);
+
+        const grad = ctx.createRadialGradient(-c.r * 0.3, -c.r * 0.3, 1, 0, 0, c.r);
+        grad.addColorStop(0, '#fff7cf');
+        grad.addColorStop(0.55, '#f2b738');
+        grad.addColorStop(1, '#9e5c0c');
+        ctx.beginPath();
+        ctx.arc(0, 0, c.r, 0, Math.PI * 2);
+        ctx.fillStyle = grad;
+        ctx.fill();
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = '#fff0b3';
+        ctx.stroke();
+
+        ctx.beginPath();
+        ctx.arc(0, 0, c.r * 0.62, 0, Math.PI * 2);
+        ctx.lineWidth = 1.4;
+        ctx.strokeStyle = 'rgba(120, 62, 6, 0.75)';
+        ctx.stroke();
+        ctx.restore();
+
+        if (c.y > h + 60) coins.splice(i, 1);
+      }
+
+      for (let i = sparks.length - 1; i >= 0; i--) {
+        const s = sparks[i];
+        s.vx *= 0.96;
+        s.vy += 0.16;
+        s.x += s.vx;
+        s.y += s.vy;
+        s.life -= 0.024;
+        if (s.life <= 0) { sparks.splice(i, 1); continue; }
+        ctx.globalAlpha = s.life;
+        ctx.fillStyle = s.life > 0.5 ? '#fff3c4' : '#ff7b29';
+        ctx.beginPath();
+        ctx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    return {
+      start() {
+        resize();
+        coins.length = 0;
+        sparks.length = 0;
+        running = true;
+        spawn(28);
+        requestAnimationFrame(loop);
+      },
+      burst(n = 14) { spawn(n); },
+      stop() {
+        running = false;
+        coins.length = 0;
+        sparks.length = 0;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+      }
+    };
+  }
+  const coinRain = createCoinRainController();
 
   async function showBigWinIfNeeded(totalWinMoney, bet) {
     const finalMult = totalWinMoney / bet;
@@ -1201,11 +1278,9 @@
     overlay.classList.remove('hidden');
 
     AUDIO.duckMusic(true);
-    AUDIO.playSfx('big_win', { volume: 0.95 });
-    const counterSfx = AUDIO.playSfx('countup_loop', { volume: 0.72, loop: true });
-    triggerShake(12, 420);
-    triggerFlash(0.48);
-    spawnCoinFountain(24);
+    AUDIO.playSfx('big_win', { volume: 1.0 });
+    const counterSfx = AUDIO.playSfx('countup_loop', { volume: 1.0, loop: true });
+    coinRain.start();
 
     let skipped = false;
     const onSkip = () => { skipped = true; };
@@ -1213,20 +1288,20 @@
     overlay.addEventListener('click', onSkip, { once: true });
     window.addEventListener('keydown', onKeySkip);
 
-    const duration = Math.min(5400, 2100 + finalMult * 22);
-    const start = performance.now();
-    let lastCoinBurst = 0;
+    const duration = Math.min(5600, 2300 + finalMult * 22);
+    let elapsed = 0;
+    let lastBurst = 0;
 
-    while (!skipped) {
-      const now = performance.now();
-      const p = Math.min(1, (now - start) / duration);
+    while (!skipped && elapsed < duration) {
+      await gameSleep(32);
+      elapsed += 32;
+      const p = Math.min(1, elapsed / duration);
       const val = totalWinMoney * (1 - Math.pow(1 - p, 2.1));
       const curMult = val / bet;
 
       amountEl.textContent = RGS.formatMoney(val);
       multEl.textContent = `${Math.floor(curMult)}×`;
 
-      // Kademeli seviye patlaması (BIG -> MEGA -> EPIC -> MAX)
       const nextTier = getWinTier(curMult);
       if (nextTier !== shownTier) {
         shownTier = nextTier;
@@ -1234,78 +1309,69 @@
         tierEl.classList.remove('tier-pop');
         void tierEl.offsetWidth;
         tierEl.classList.add('tier-pop');
-        AUDIO.playSfx('vs_clash', { volume: 0.85, rate: 1.15 });
-        triggerShake(15, 360);
-        triggerFlash(0.42);
-        spawnCoinFountain(22);
-        spawnShockwave(STAGE_W / 2, STAGE_H / 2, 0xfff0bc, 260);
+        AUDIO.playSfx('vs_clash', { volume: 0.9, rate: 1.15 });
+        coinRain.burst(28);
       }
 
-      if (now - lastCoinBurst > 240) {
-        lastCoinBurst = now;
-        spawnCoinFountain(8);
-        spawnBurst(STAGE_W * (0.2 + Math.random() * 0.6), STAGE_H * 0.45, 10, [0xfff0bc, 0xf6d379, 0xff7b29]);
+      if (elapsed - lastBurst >= 260) {
+        lastBurst = elapsed;
+        coinRain.burst(10);
       }
-
-      if (p >= 1) break;
-      await sleep(30);
     }
 
     overlay.removeEventListener('click', onSkip);
     window.removeEventListener('keydown', onKeySkip);
     counterSfx.stop(60);
-    AUDIO.playSfx('countup_end', { volume: 0.95 });
+    AUDIO.playSfx('countup_end', { volume: 1.0 });
 
     tierEl.textContent = getWinTier(finalMult);
     amountEl.textContent = RGS.formatMoney(totalWinMoney);
     multEl.textContent = `${finalMult.toFixed(1)}×`;
-    spawnCoinFountain(18);
-    await sleep(skipped ? 620 : 1450);
+    coinRain.burst(22);
+    await gameSleep(skipped ? 680 : 1550);
 
+    coinRain.stop();
     overlay.classList.add('hidden');
     AUDIO.duckMusic(false);
   }
 
-  // --- TEK SPİN AKIŞI ---
+  // --- TEK SPİN ANİMASYON AKIŞI (AĞIR DÜŞÜŞ + GERİLİM + VS + RETRIGGER) ---
   async function runSingleSpinVisual(ev, bet, allowIdleCycle = false) {
     clearRoundVisuals();
     state.quickStop = false;
 
-    AUDIO.playSfx('spin', { volume: 0.82 });
+    AUDIO.playSfx('spin', { volume: 1.0 });
     spawnSteamPuff(BOARD_X - 14, BOARD_Y + BOARD_H * 0.5, -1.2, -1.2);
     spawnSteamPuff(BOARD_X + BOARD_W + 14, BOARD_Y + BOARD_H * 0.5, 1.2, -1.2);
 
-    if (!state.turbo) {
-      reels.forEach(r => r.slots.forEach(s => { s.box.y -= 14; }));
-      await sleep(50);
+    // 1. Eski semboller soldan sağa ağır biçimde aşağı boşalır
+    const exitPromises = [];
+    for (let c = 0; c < COLS; c++) {
+      exitPromises.push(
+        (async () => {
+          if (c > 0 && !state.quickStop) await gameSleep(state.turbo ? 24 : 52 * c);
+          await animateColumnExit(c);
+        })()
+      );
     }
+    await Promise.all(exitPromises);
 
-    reels.forEach((r) => {
-      r.spinning = true;
-      r.speed = state.turbo ? 64 : 48;
-      r.slots.forEach((s) => {
-        s.sp.scale.y = s.baseScale * 1.18;
-        s.box.alpha = 0.88;
-      });
-    });
-
-    await sleep(state.turbo ? 140 : 340);
-
+    // 2. Yeni semboller yukarıdan sütun sütun tok bir ağırlıkla yerine oturur
     let scLanded = 0;
     let teaseSfx = null;
 
     for (let c = 0; c < COLS; c++) {
-      const shouldTease = !state.inBonus && !state.quickStop && !state.turbo && scLanded >= 2;
+      const shouldTease = !state.quickStop && !state.turbo && scLanded >= 2;
+      let teaseMs = 0;
       if (shouldTease) {
         showTeaseColumn(c);
-        if (!teaseSfx) teaseSfx = AUDIO.playSfx('anticipation', { volume: 0.88, loop: true });
-        reels[c].speed = 70;
-        await sleep(920);
+        if (!teaseSfx) teaseSfx = AUDIO.playSfx('anticipation', { volume: 1.0, loop: true });
+        teaseMs = 760;
       } else if (c > 0 && !state.quickStop) {
-        await sleep(state.turbo ? 50 : 140);
+        await gameSleep(state.turbo ? 45 : 115);
       }
 
-      const gotSC = await animateColumnStop(c, ev.grid, scLanded);
+      const gotSC = await animateColumnDropIn(c, ev.grid, scLanded, teaseMs);
       if (gotSC) scLanded++;
     }
 
@@ -1314,14 +1380,30 @@
     state.targetZoom = 1.0;
     state.currentGrid = ev.grid;
 
+    // 3. VS Düello Genişlemesi
     if (ev.vsReels && Object.keys(ev.vsReels).length > 0) {
+      await gameSleep(state.turbo ? 120 : 280);
       await playVSDuels(ev.vsReels);
     }
 
+    // 4. Ödeme Çizgileri & Kazanç Gösterimi
     const spinWinMoney = +(ev.spinWin * bet).toFixed(2);
     if (spinWinMoney > 0) {
       await showWinLines(ev.wins || [], spinWinMoney, bet, allowIdleCycle);
     }
+
+    // 5. Bonus İçi Retrigger (+2 / +5 Ekstra Free Spin) Kutlaması
+    if (ev.retriggerSpins && ev.retriggerSpins > 0) {
+      AUDIO.playSfx('bonus_trigger', { volume: 1.0 });
+      triggerFlash(0.42);
+      triggerShake(10, 320);
+      spawnBurst(STAGE_W / 2, STAGE_H / 2, 48, [0xfff1bf, 0xff7b29, 0x49d6ff]);
+      $('retrigger-text').textContent = `+${ev.retriggerSpins} FREE SPINS`;
+      $('retrigger-banner').classList.remove('hidden');
+      await gameSleep(state.turbo ? 900 : 1650);
+      $('retrigger-banner').classList.add('hidden');
+    }
+
     return spinWinMoney;
   }
 
@@ -1331,7 +1413,7 @@
       const btn = $(btnId);
       modal.classList.remove('hidden');
       const handler = () => {
-        AUDIO.playSfx('ui_click', { volume: 0.85 });
+        AUDIO.playSfx('ui_click', { volume: 1.0 });
         modal.classList.add('hidden');
         resolve();
       };
@@ -1339,15 +1421,16 @@
     });
   }
 
-  // --- TUR OYNATMA (NORMAL VEYA RGS KURTARMA) ---
+  // --- TUR OYNATMA (BASE / BUY BONUS 3-SCATTER TRIGGER / RETRIGGER / 20 DK KURTARMA) ---
   async function playRoundEvents(result, bet) {
     const events = result.events || [];
     let runningWin = 0;
     let bonusEvents = events;
 
-    const hasBonus = events.length > 1 || (events.length === 1 && events[0].type === 'bonusSpin');
+    const firstType = events[0]?.type;
+    const hasBonus = events.length > 1 || firstType === 'buyTrigger' || firstType === 'bonusSpin';
 
-    if (events.length && events[0].type === 'spin') {
+    if (events.length && (firstType === 'spin' || firstType === 'buyTrigger')) {
       const allowCycle = !hasBonus && state.autoLeft === 0;
       const baseWin = await runSingleSpinVisual(events[0], bet, allowCycle);
       runningWin = +(runningWin + baseWin).toFixed(2);
@@ -1359,61 +1442,71 @@
       state.autoLeft = 0;
       updateAutoUI();
 
+      // 3-Scatter tetikleme kutlaması -> Free Spins Giriş Ekranı
       AUDIO.duckMusic(true);
       AUDIO.playSfx('bonus_trigger', { volume: 1.0 });
       triggerFlash(0.45);
-      await sleep(450);
+      await gameSleep(650);
       await waitForButton('fs-intro-modal', 'btn-start-fs');
       AUDIO.duckMusic(false);
 
       setBonusTheme(true);
       state.displayedHudWin = runningWin;
-      const totalFS = bonusEvents.length;
 
-      for (let i = 0; i < totalFS; i++) {
-        $('hud-spins').textContent = `${totalFS - i} / ${totalFS}`;
+      for (let i = 0; i < bonusEvents.length; i++) {
+        const ev = bonusEvents[i];
+        const totalDisplay = ev.totalSpins || bonusEvents.length;
+        const leftDisplay = typeof ev.spinsLeft === 'number'
+          ? (ev.spinsLeft + 1 - (ev.retriggerSpins || 0))
+          : (bonusEvents.length - i);
+
+        $('hud-spins').textContent = `${Math.max(1, leftDisplay)} / ${totalDisplay}`;
         $('hud-total-win').textContent = RGS.formatMoney(state.displayedHudWin);
 
-        const fsWin = await runSingleSpinVisual(bonusEvents[i], bet, false);
+        const fsWin = await runSingleSpinVisual(ev, bet, false);
         const prevWin = runningWin;
         runningWin = +(runningWin + fsWin).toFixed(2);
-        animateMoney($('hud-total-win'), prevWin, runningWin, state.turbo ? 240 : 480);
+        animateMoney($('hud-total-win'), prevWin, runningWin, state.turbo ? 260 : 520);
         state.displayedHudWin = runningWin;
+
+        if (ev.retriggerSpins > 0) {
+          $('hud-spins').textContent = `${ev.spinsLeft} / ${ev.totalSpins}`;
+        }
         syncMoneyUI(runningWin, true);
 
         if (fsWin >= bet * 15) {
           await showBigWinIfNeeded(fsWin, bet);
         }
-        await sleep(state.turbo ? 160 : 380);
+        await gameSleep(state.turbo ? 220 : 560);
       }
 
-      // Bonus Bitiş Ekranı + Sayaç
+      // Bonus Bitiş Özet Ekranı + Sayaç
       const totalBonusMoney = +(result.payoutMultiplier * bet).toFixed(2);
       $('fs-outro-amount').textContent = RGS.formatMoney(0);
       $('fs-outro-mult').textContent = `${result.payoutMultiplier.toFixed(2)}× ${RGS.isSocial ? 'PLAY' : 'BET'}`;
       $('fs-outro-modal').classList.remove('hidden');
 
-      const cSfx = AUDIO.playSfx('countup_loop', { volume: 0.7, loop: true });
-      const t0 = performance.now();
-      const dur = totalBonusMoney > 0 ? 1500 : 80;
-      while (true) {
-        const p = Math.min(1, (performance.now() - t0) / dur);
-        $('fs-outro-amount').textContent = RGS.formatMoney(totalBonusMoney * p);
-        if (p >= 1) break;
-        await sleep(25);
+      const cSfx = AUDIO.playSfx('countup_loop', { volume: 1.0, loop: true });
+      const dur = totalBonusMoney > 0 ? 1600 : 80;
+      let el = 0;
+      while (el < dur) {
+        await gameSleep(28);
+        el += 28;
+        $('fs-outro-amount').textContent = RGS.formatMoney(totalBonusMoney * Math.min(1, el / dur));
       }
+      $('fs-outro-amount').textContent = RGS.formatMoney(totalBonusMoney);
       cSfx.stop(60);
-      if (totalBonusMoney > 0) AUDIO.playSfx('countup_end', { volume: 0.92 });
+      if (totalBonusMoney > 0) AUDIO.playSfx('countup_end', { volume: 1.0 });
 
       await waitForButton('fs-outro-modal', 'btn-end-fs');
-      setBonusTheme(false); // Tahta, VS ve WIN banner tamamen temizlenir
+      setBonusTheme(false);
     } else if (runningWin >= bet * 15) {
       await showBigWinIfNeeded(runningWin, bet);
     }
 
     state.balance = result.balanceAfter;
     syncMoneyUI(+(result.payoutMultiplier * bet).toFixed(2), false);
-    await RGS.endRound();
+    await RGS.endRound(result.payoutMultiplier);
   }
 
   async function executeRound(mode = 'base') {
@@ -1452,7 +1545,9 @@
       if (state.autoLeft > 0 && !state.inBonus) {
         state.autoLeft--;
         updateAutoUI();
-        setTimeout(() => executeRound('base'), state.turbo ? 240 : 560);
+        gameSleep(state.turbo ? 280 : 680).then(() => {
+          if (!state.spinning && !state.inBonus) executeRound('base');
+        });
       }
     }
   }
@@ -1469,18 +1564,17 @@
     const next = state.betIndex + delta;
     if (next >= 0 && next < RGS.betLevels.length) {
       state.betIndex = next;
-      AUDIO.playSfx('ui_click', { volume: 0.8 });
+      AUDIO.playSfx('ui_click', { volume: 1.0 });
       syncMoneyUI();
     }
   }
 
   function bindEvents() {
     $('btn-spin').addEventListener('click', () => {
-      if (!state.spinning) AUDIO.playSfx('ui_click', { volume: 0.7 });
+      if (!state.spinning) AUDIO.playSfx('ui_click', { volume: 0.85 });
       executeRound('base');
     });
 
-    // Sahneye dokunarak makara veya kazanç animasyonunu hızla atlama
     $('pixi-container').addEventListener('click', () => {
       if (state.spinning) {
         state.quickStop = true;
@@ -1489,7 +1583,7 @@
     });
 
     window.addEventListener('keydown', (e) => {
-      if (e.code === 'Space' && $('splash-screen').classList.contains('hidden')) {
+      if (e.code === 'Space' && $('splash-screen').classList.contains('hidden') && $('studio-intro').classList.contains('hidden')) {
         if (!$('bigwin-overlay').classList.contains('hidden')) return;
         if (!$('buy-modal').classList.contains('hidden')) return;
         if (!$('info-modal').classList.contains('hidden')) return;
@@ -1506,7 +1600,7 @@
     $('btn-turbo').addEventListener('click', () => {
       state.turbo = !state.turbo;
       $('btn-turbo').classList.toggle('active', state.turbo);
-      AUDIO.playSfx('ui_click', { volume: 0.8 });
+      AUDIO.playSfx('ui_click', { volume: 1.0 });
     });
 
     $('btn-sound').addEventListener('click', () => {
@@ -1517,13 +1611,13 @@
     });
 
     $('btn-info').addEventListener('click', () => {
-      AUDIO.playSfx('ui_click', { volume: 0.8 });
+      AUDIO.playSfx('ui_click', { volume: 1.0 });
       $('info-modal').classList.remove('hidden');
     });
 
     $('btn-buy-bonus').addEventListener('click', () => {
       if (state.spinning || state.inBonus) return;
-      AUDIO.playSfx('ui_click', { volume: 0.8 });
+      AUDIO.playSfx('ui_click', { volume: 1.0 });
       syncMoneyUI();
       $('buy-modal').classList.remove('hidden');
     });
@@ -1531,12 +1625,12 @@
     $('btn-confirm-buy').addEventListener('click', () => {
       if (state.balance < currentBet() * 100) return;
       $('buy-modal').classList.add('hidden');
-      AUDIO.playSfx('buy_bonus', { volume: 0.95 });
+      AUDIO.playSfx('buy_bonus', { volume: 1.0 });
       executeRound('bonus');
     });
 
     $('btn-auto').addEventListener('click', () => {
-      AUDIO.playSfx('ui_click', { volume: 0.8 });
+      AUDIO.playSfx('ui_click', { volume: 1.0 });
       if (state.autoLeft > 0) {
         state.autoLeft = 0;
         updateAutoUI();
@@ -1549,7 +1643,7 @@
       btn.addEventListener('click', () => {
         const count = Number(btn.dataset.spins);
         $('auto-popover').classList.add('hidden');
-        AUDIO.playSfx('ui_click', { volume: 0.8 });
+        AUDIO.playSfx('ui_click', { volume: 1.0 });
         state.autoLeft = count - 1;
         updateAutoUI();
         executeRound('base');
@@ -1558,9 +1652,49 @@
 
     document.querySelectorAll('[data-close]').forEach((btn) => {
       btn.addEventListener('click', () => {
-        AUDIO.playSfx('ui_click', { volume: 0.7 });
+        AUDIO.playSfx('ui_click', { volume: 0.9 });
         $(btn.dataset.close).classList.add('hidden');
       });
+    });
+  }
+
+  // --- STÜDYO JENERİK + TAM EKRAN SPLASH AÇILIŞ AKIŞI ---
+  function playStudioIntro() {
+    return new Promise((resolve) => {
+      const wrap = $('studio-intro');
+      const vid = $('studio-video');
+      const fb = $('studio-fallback');
+      let finished = false;
+
+      const done = () => {
+        if (finished) return;
+        finished = true;
+        wrap.classList.add('fade-out');
+        setTimeout(() => {
+          try { vid.pause(); } catch (_) {}
+          wrap.classList.add('hidden');
+          resolve();
+        }, 620);
+      };
+
+      wrap.addEventListener('click', done, { once: true });
+      vid.addEventListener('ended', done, { once: true });
+      vid.addEventListener('error', () => {
+        vid.classList.add('hidden');
+        fb.classList.remove('hidden');
+        setTimeout(done, 1900);
+      }, { once: true });
+
+      const playPromise = vid.play();
+      if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch(() => {
+          vid.classList.add('hidden');
+          fb.classList.remove('hidden');
+          setTimeout(done, 1900);
+        });
+      }
+      // Güvenlik sınırı (maks 5.5 sn)
+      setTimeout(done, 5500);
     });
   }
 
@@ -1574,54 +1708,72 @@
       $('load-text').textContent = `${label} ${Math.round(pct)}%`;
     };
 
-    try {
-      const auth = await RGS.authenticate();
-      state.balance = auth.balance;
-      state.pendingRound = auth.pendingRound || null;
-      // Canlı (LIVE) modda DEMO rozetini tamamen gizle
-      $('mode-badge').classList.toggle('hidden', auth.mode !== 'DEMO');
-      const defIdx = RGS.betLevels.findIndex(v => v >= 1.0);
-      state.betIndex = defIdx >= 0 ? defIdx : 0;
-      syncMoneyUI(0, false);
-    } catch (err) {
-      $('mode-badge').classList.remove('hidden');
-      showToast('RGS AUTH FAILED — DEMO FALLBACK');
-    }
+    // Stüdyo jeneriği oynarken arka planda RGS + tüm görseller paralel yüklenir
+    const introDone = playStudioIntro();
 
-    for (let i = 0; i < SYMBOL_KEYS.length; i++) {
-      const key = SYMBOL_KEYS[i];
+    const loadAssets = (async () => {
       try {
-        state.textures[key] = await PIXI.Assets.load(`assets/img/${key}.png`);
-      } catch (e) {
-        console.warn(`[Img] Eksik: assets/img/${key}.png`);
-        state.textures[key] = PIXI.Texture.EMPTY;
+        const auth = await RGS.authenticate();
+        state.balance = auth.balance;
+        state.pendingRound = auth.pendingRound || null;
+        $('mode-badge').classList.toggle('hidden', auth.mode !== 'DEMO');
+        const defIdx = RGS.betLevels.findIndex(v => v >= 1.0);
+        state.betIndex = defIdx >= 0 ? defIdx : 0;
+        syncMoneyUI(0, false);
+      } catch (err) {
+        $('mode-badge').classList.remove('hidden');
+        showToast('RGS AUTH FAILED — DEMO FALLBACK');
       }
-      setLoad(((i + 1) / SYMBOL_KEYS.length) * 85, 'LOADING ASSETS');
-    }
 
-    populateInitialReels();
-    resizeStage();
+      const allTexKeys = [...SYMBOL_KEYS, ...EXTRA_TEXTURES];
+      for (let i = 0; i < allTexKeys.length; i++) {
+        const key = allTexKeys[i];
+        try {
+          state.textures[key] = await PIXI.Assets.load(`assets/img/${key}.png`);
+        } catch (e) {
+          console.warn(`[Img] Eksik: assets/img/${key}.png`);
+          state.textures[key] = PIXI.Texture.EMPTY;
+        }
+        setLoad(((i + 1) / allTexKeys.length) * 90, 'LOADING FORGE');
+      }
 
-    setLoad(100, 'READY');
+      populateInitialReels();
+      resizeStage();
+      setLoad(100, 'READY');
+    })();
+
+    await introDone;
+    $('splash-screen').classList.remove('hidden');
+    await loadAssets;
+
     $('load-wrap').classList.add('hidden');
     $('btn-splash-play').classList.remove('hidden');
 
-    $('btn-splash-play').addEventListener('click', async () => {
-      $('btn-splash-play').disabled = true;
-      $('btn-splash-play').textContent = 'STARTING...';
+    // Çerçevesiz tam ekranda herhangi bir yere dokununca başla
+    let entered = false;
+    const enterGame = async () => {
+      if (entered) return;
+      entered = true;
+      $('btn-splash-play').textContent = 'ENTERING...';
       AUDIO.ensureContext();
       AUDIO.playMusic('base');
       await AUDIO.preload();
-      AUDIO.playSfx('ui_click', { volume: 0.8 });
-      $('splash-screen').classList.add('hidden');
+      AUDIO.playSfx('ui_click', { volume: 1.0 });
+
+      $('splash-screen').classList.add('fade-out');
+      setTimeout(() => $('splash-screen').classList.add('hidden'), 520);
       resizeStage();
 
-      // Bağlantı kopması sonrası yarım kalmış RGS turu varsa otomatik kurtar
+      // 20 DK SONRA YARIM KALMIŞ BONUS KURTARMA (Tutarlı Tekrar Oynatma)
       if (state.pendingRound) {
         const pr = state.pendingRound;
         state.pendingRound = null;
+        const betIdx = RGS.betLevels.findIndex(v => Math.abs(v - pr.betAmount) < 0.001);
+        if (betIdx >= 0) state.betIndex = betIdx;
+        showToast('RESUMING UNFINISHED BONUS...');
         state.spinning = true;
         setSpinVisual(true);
+        syncMoneyUI(0, false);
         try {
           await playRoundEvents(pr, pr.betAmount || currentBet());
         } finally {
@@ -1630,7 +1782,10 @@
           syncMoneyUI();
         }
       }
-    }, { once: true });
+    };
+
+    $('splash-screen').addEventListener('click', enterGame, { once: true });
+    $('btn-splash-play').addEventListener('click', enterGame, { once: true });
   }
 
   boot();
