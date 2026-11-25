@@ -5,6 +5,23 @@
     'anticipation', 'countup_loop', 'countup_end', 'buy_bonus'
   ];
 
+  // Aşama 4 Ses Miksajı: Mekanik spin/stop sertliği yumuşatıldı, müzik dengelendi
+  const SFX_MIX = {
+    ui_click: 0.55,
+    spin: 0.36,
+    stop: 0.34,
+    scatter_land: 0.85,
+    win: 0.78,
+    vs_expand: 0.82,
+    vs_clash: 0.88,
+    bonus_trigger: 0.90,
+    big_win: 0.92,
+    anticipation: 0.65,
+    countup_loop: 0.55,
+    countup_end: 0.84,
+    buy_bonus: 0.82
+  };
+
   const MUSIC_PATHS = {
     base: 'assets/audio/music_base.mp3',
     bonus: 'assets/audio/music_bonus.mp3'
@@ -18,24 +35,13 @@
       this.buffers = new Map();
       this.muted = false;
       this.unlocked = false;
+      this.paused = false;
 
-      // Uzun müzikler için anında akan HTML5 Audio kanalları (mobil RAM/decode takılmasını önler)
       this.musicEls = {};
       this.currentTrack = null;
-      this.musicBaseVolume = 0.44;
+      this.musicBaseVolume = 0.48;
       this.duckCount = 0;
       this._fadeIntervals = new Map();
-
-      document.addEventListener('visibilitychange', () => {
-        if (!this.currentTrack) return;
-        const el = this.musicEls[this.currentTrack];
-        if (!el) return;
-        if (document.hidden) {
-          el.pause();
-        } else if (!this.muted && this.unlocked) {
-          el.play().catch(() => {});
-        }
-      });
     }
 
     ensureContext() {
@@ -46,16 +52,15 @@
         this.sfxBus = this.ctx.createGain();
 
         this.masterGain.gain.value = this.muted ? 0 : 1;
-        this.sfxBus.gain.value = 0.92;
+        this.sfxBus.gain.value = 0.88;
 
         this.sfxBus.connect(this.masterGain);
         this.masterGain.connect(this.ctx.destination);
       }
-      if (this.ctx.state === 'suspended') {
+      if (this.ctx.state === 'suspended' && !this.paused) {
         this.ctx.resume().catch(() => {});
       }
 
-      // HTML5 müzik elementlerini ilk dokunuşta hazırla
       Object.entries(MUSIC_PATHS).forEach(([name, src]) => {
         if (!this.musicEls[name]) {
           const el = new Audio(src);
@@ -70,11 +75,32 @@
       this.unlocked = true;
     }
 
+    // GLOBAL PAUSE GATE: Ekran alta indiğinde hem müzik hem TÜM SFX anında donar
+    pauseAll() {
+      this.paused = true;
+      if (this.ctx && this.ctx.state === 'running') {
+        this.ctx.suspend().catch(() => {});
+      }
+      Object.values(this.musicEls).forEach((el) => {
+        try { el.pause(); } catch (_) {}
+      });
+    }
+
+    resumeAll() {
+      this.paused = false;
+      if (this.ctx && this.ctx.state === 'suspended') {
+        this.ctx.resume().catch(() => {});
+      }
+      if (!this.muted && this.unlocked && this.currentTrack && this.musicEls[this.currentTrack]) {
+        const el = this.musicEls[this.currentTrack];
+        el.volume = this._targetMusicVol();
+        el.play().catch(() => {});
+      }
+    }
+
     async preload(onProgress) {
       this.ensureContext();
       let done = 0;
-
-      // Sadece kısa SFX dosyalarını Web Audio tamponuna yükle (çok hızlı)
       await Promise.all(SFX_NAMES.map(async (key) => {
         try {
           const res = await fetch(`assets/audio/${key}.mp3`);
@@ -93,19 +119,18 @@
 
     _targetMusicVol() {
       if (this.muted) return 0;
-      return this.duckCount > 0 ? this.musicBaseVolume * 0.32 : this.musicBaseVolume;
+      return this.duckCount > 0 ? this.musicBaseVolume * 0.34 : this.musicBaseVolume;
     }
 
-    _fadeElement(name, targetVol, durationMs = 900, pauseAtZero = false) {
+    _fadeElement(name, targetVol, durationMs = 950, pauseAtZero = false) {
       const el = this.musicEls[name];
       if (!el) return;
-      if (this._fadeIntervals.has(name)) {
-        clearInterval(this._fadeIntervals.get(name));
-      }
+      if (this._fadeIntervals.has(name)) clearInterval(this._fadeIntervals.get(name));
       const startVol = el.volume;
       const steps = Math.max(1, Math.round(durationMs / 35));
       let step = 0;
       const id = setInterval(() => {
+        if (this.paused) return;
         step++;
         const p = Math.min(1, step / steps);
         el.volume = Math.max(0, Math.min(1, startVol + (targetVol - startVol) * p));
@@ -123,10 +148,8 @@
       if (this.masterGain && this.ctx) {
         this.masterGain.gain.setTargetAtTime(muted ? 0 : 1, this.ctx.currentTime, 0.03);
       }
-      Object.values(this.musicEls).forEach((el) => {
-        el.muted = muted;
-      });
-      if (!muted && this.currentTrack && this.musicEls[this.currentTrack]) {
+      Object.values(this.musicEls).forEach((el) => { el.muted = muted; });
+      if (!muted && !this.paused && this.currentTrack && this.musicEls[this.currentTrack]) {
         const el = this.musicEls[this.currentTrack];
         el.volume = this._targetMusicVol();
         el.play().catch(() => {});
@@ -141,7 +164,7 @@
     duckMusic(active) {
       this.duckCount = Math.max(0, this.duckCount + (active ? 1 : -1));
       if (this.currentTrack) {
-        this._fadeElement(this.currentTrack, this._targetMusicVol(), 260, false);
+        this._fadeElement(this.currentTrack, this._targetMusicVol(), 280, false);
       }
     }
 
@@ -149,7 +172,7 @@
       this.ensureContext();
       if (this.currentTrack === trackName) {
         const cur = this.musicEls[trackName];
-        if (cur && cur.paused && !this.muted) cur.play().catch(() => {});
+        if (cur && cur.paused && !this.muted && !this.paused) cur.play().catch(() => {});
         return;
       }
 
@@ -164,29 +187,29 @@
       if (!nextEl) return;
       nextEl.muted = this.muted;
       nextEl.volume = 0;
-      if (nextEl.paused) {
+      if (nextEl.paused && !this.paused) {
         nextEl.currentTime = 0;
-        nextEl.play().catch((err) => console.warn('[Audio] Müzik başlatılamadı:', err.message));
+        nextEl.play().catch(() => {});
       }
       this._fadeElement(trackName, this._targetMusicVol(), 1100, false);
     }
 
     playSfx(name, { volume = 1.0, rate = 1.0, loop = false } = {}) {
-      if (!this.unlocked || !this.ctx) return { stop: () => {} };
+      if (!this.unlocked || !this.ctx || this.paused) return { stop: () => {} };
       let buffer = this.buffers.get(name);
-      // big_win eksikse bonus_trigger veya win ile sessiz kalmasını önle
       if (!buffer && name === 'big_win') {
         buffer = this.buffers.get('bonus_trigger') || this.buffers.get('win');
       }
       if (!buffer) return { stop: () => {} };
 
+      const mix = SFX_MIX[name] ?? 0.75;
       const now = this.ctx.currentTime;
       const src = this.ctx.createBufferSource();
       const gain = this.ctx.createGain();
       src.buffer = buffer;
       src.playbackRate.value = rate;
       src.loop = loop;
-      gain.gain.setValueAtTime(volume, now);
+      gain.gain.setValueAtTime(Math.min(1, volume * mix), now);
 
       src.connect(gain);
       gain.connect(this.sfxBus);
