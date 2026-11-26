@@ -4,11 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>BRASS VENDETTA — TessynLabs</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700;900&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="style.css" />
-  <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.4.1/dist/pixi.min.js"></script>
+  <script src="lib/pixi.min.js"></script>
 </head>
 <body>
   <!-- ARKA PLAN KATMANLARI -->
@@ -45,6 +42,7 @@
 
         <div id="top-right-badges">
           <span id="mode-badge" class="mode-badge hidden">DEMO</span>
+          <span id="replay-badge" class="mode-badge replay-badge hidden">REPLAY</span>
           <div class="side-maxwin">
             <span>MAX WIN</span>
             <strong>12,500×</strong>
@@ -59,14 +57,23 @@
           <span class="win-banner-label">WIN</span>
           <span id="win-banner-amount">$0.00</span>
         </div>
+        <div id="vs-total-banner" class="hidden">
+          <span class="vs-total-eyebrow">COMBINED MULTIPLIER</span>
+          <strong id="vs-total-text">14×</strong>
+        </div>
         <div id="retrigger-banner" class="hidden">
           <span class="retrigger-eyebrow">RETRIGGER!</span>
           <strong id="retrigger-text">+2 FREE SPINS</strong>
         </div>
+        <!-- REPLAY BİTİŞ BAR (ZORUNLU PLAY AGAIN) -->
+        <div id="replay-again-bar" class="hidden">
+          <span class="replay-done-tag">REPLAY COMPLETE</span>
+          <button id="btn-replay-again" class="cta-btn" type="button">PLAY AGAIN</button>
+        </div>
       </main>
     </div>
 
-    <!-- WAYLANDERS TARZI FERAH ALT KONTROL BARI -->
+    <!-- FERAH ALT KONTROL BARI -->
     <footer id="bottom-bar">
       <div class="bar-controls">
         <div class="bar-left">
@@ -114,13 +121,13 @@
         </div>
       </div>
 
-      <!-- İNCE TEK ŞERİT BAKİYE / BAHİS / KAZANÇ -->
+      <!-- İNCE TEK ŞERİT BAKİYE / KAZANÇ / BAHİS -->
       <div class="bar-strip">
-        <div class="strip-item">
+        <div id="strip-balance-wrap" class="strip-item">
           <span class="strip-label">BALANCE</span>
           <strong id="ui-balance" class="strip-val">$1,000.00</strong>
         </div>
-        <div class="strip-divider"></div>
+        <div id="strip-div-1" class="strip-divider"></div>
         <div class="strip-item strip-win">
           <span class="strip-label">WIN</span>
           <strong id="ui-win" class="strip-val">$0.00</strong>
@@ -134,7 +141,7 @@
     </footer>
   </div>
 
-  <!-- 0. TESSYNLABS STÜDYO AÇILIŞ JENERİĞİ -->
+  <!-- 0. TESSYNLABS STÜDYO AÇILIŞ JENERİĞİ (EN ÜST KATMAN) -->
   <section id="studio-intro">
     <video id="studio-video" src="assets/studio_intro.mp4" playsinline muted preload="auto"></video>
     <div id="studio-fallback" class="hidden">
@@ -144,8 +151,8 @@
     <span class="intro-skip-hint">TAP TO SKIP</span>
   </section>
 
-  <!-- 1. ÇERÇEVESİZ TAM EKRAN SPLASH ("PRESS TO CONTINUE!") -->
-  <section id="splash-screen" class="hidden">
+  <!-- 1. ÇERÇEVESİZ TAM EKRAN SPLASH (EN BAŞTAN JENERİK ALTINDA HAZIR — SIFIR SIÇRAMA!) -->
+  <section id="splash-screen">
     <div class="splash-bg"></div>
     <div class="splash-scrim"></div>
     <div class="splash-content">
@@ -183,11 +190,11 @@
     </div>
   </section>
 
-  <!-- 3. KURALLAR & ÖDEME TABLOSU MODALI -->
+  <!-- 3. KURALLAR, ÖDEME TABLOSU & ZORUNLU UI REHBERİ -->
   <div id="info-modal" class="modal-backdrop hidden">
     <div class="modal-box modal-large">
       <div class="modal-header">
-        <h2>PAYTABLE &amp; GAME RULES</h2>
+        <h2>PAYTABLE, RULES &amp; UI GUIDE</h2>
         <button class="modal-close" data-close="info-modal" aria-label="Close">&times;</button>
       </div>
       <div class="modal-body">
@@ -220,7 +227,17 @@
         <h3 class="sec-title">14 FIXED PAYLINES</h3>
         <div id="paylines-grid" class="paylines-grid"></div>
 
-        <p class="legal-note">All wins pay left to right on adjacent reels starting from reel 1. Only the highest win per payline is paid. Maximum win is capped at 12,500× bet; reaching the cap immediately concludes the round. Malfunction voids all pays and plays.</p>
+        <h3 class="sec-title">INTERFACE &amp; CONTROLS GUIDE</h3>
+        <div class="ui-guide-grid">
+          <div class="ug-item"><strong>SPIN / SPACEBAR</strong><p>Starts a new round. Tap the spin button, board, or press Space during reels or count-up to quick-stop and skip.</p></div>
+          <div class="ug-item"><strong>BET / PLAY (− / +)</strong><p>Decreases or increases your stake per round within the operator's allowed bet levels.</p></div>
+          <div class="ug-item"><strong>BUY BONUS / FEATURE</strong><p>Opens the feature purchase panel to immediately trigger 10 Furnace Free Spins via a 3-Scatter drop (100× stake).</p></div>
+          <div class="ug-item"><strong>AUTOPLAY</strong><p>Automatically plays 10, 25, 50, or 100 consecutive rounds. Stops automatically on Bonus Trigger or manual click.</p></div>
+          <div class="ug-item"><strong>TURBO (BOLT)</strong><p>Toggles high-speed reel drops and shortened win transitions.</p></div>
+          <div class="ug-item"><strong>AUDIO &amp; INFO (i)</strong><p>Toggles music/SFX mute and opens this paytable, rules, and controls guide.</p></div>
+        </div>
+
+        <p class="legal-note">All wins pay left to right on adjacent reels starting from reel 1. Only the highest win per payline is paid. Maximum win is capped at 12,500× stake; reaching the cap immediately concludes the round. Unfinished bonus rounds are automatically recovered on reconnect. Malfunction voids all pays and plays.</p>
       </div>
     </div>
   </div>
@@ -283,7 +300,7 @@
     </div>
   </div>
 
-  <!-- 8. AAA BIG / MEGA / EPIC / MAX WIN (ÖN KATMAN 3D ALTIN SİKKE CANVAS'LI) -->
+  <!-- 8. AAA BIG / MEGA / EPIC / MAX WIN (ÖN KATMAN 3D ALTIN SİKKE YAĞMURU) -->
   <div id="bigwin-overlay" class="modal-backdrop hidden">
     <div class="bigwin-rays"></div>
     <canvas id="bigwin-fx-canvas"></canvas>
