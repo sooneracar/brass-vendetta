@@ -1,0 +1,403 @@
+385:   const lineLayer = new PIXI.Container();
+386:   lineLayer.position.set(BOARD_X, BOARD_Y);
+387:   root.addChild(lineLayer);
+388: 
+389:   const vsForegroundLayer = new PIXI.Container();
+390:   vsForegroundLayer.position.set(BOARD_X, BOARD_Y);
+391:   root.addChild(vsForegroundLayer);
+392: 
+393:   const lineBadgeLayer = new PIXI.Container();
+394:   lineBadgeLayer.position.set(BOARD_X, BOARD_Y);
+395:   root.addChild(lineBadgeLayer);
+396: 
+397:   const fxLayer = new PIXI.Container();
+398:   root.addChild(fxLayer);
+399: 
+400:   const flashOverlay = new PIXI.Graphics();
+401:   flashOverlay.rect(0, 0, STAGE_W, STAGE_H).fill({ color: 0xffe8b0 });
+402:   flashOverlay.alpha = 0;
+403:   root.addChild(flashOverlay);
+404: 
+405:   // --- OYMALI TAŞ KARO + SEMBOL HÜCRESİ ---
+535:     state.steamPuffs.push({ gfx: g, vx, vy, scale: 0.6, life: 1 });
+536:   }
+537: 
+538:   function spawnBurst(x, y, count = 28, colors = [0xfff1bf, 0xf6d379, 0xff7b29, 0xffffff]) {
+539:     for (let i = 0; i < count; i++) {
+540:       const g = new PIXI.Graphics();
+541:       const size = 2.2 + Math.random() * 4.8;
+542:       const color = colors[Math.floor(Math.random() * colors.length)];
+543:       if (Math.random() < 0.48) g.rect(-size, -size * 0.42, size * 2, size * 0.84).fill({ color });
+544:       else g.circle(0, 0, size).fill({ color });
+545:       g.position.set(x, y);
+546:       g.rotation = Math.random() * Math.PI * 2;
+547:       fxLayer.addChild(g);
+548:       const angle = Math.random() * Math.PI * 2;
+549:       const spd = 2.8 + Math.random() * 10;
+550:       state.particles.push({
+551:         gfx: g, vx: Math.cos(angle) * spd, vy: Math.sin(angle) * spd - 2.6,
+552:         vr: (Math.random() - 0.5) * 0.25, gravity: 0.24, life: 1, decay: 0.017 + Math.random() * 0.02
+553:       });
+554:     }
+555:   }
+556: 
+557:   function spawnFloatingWin(text, x, y) {
+558:     const t = new PIXI.Text({
+559:       text,
+560:       style: {
+561:         fontFamily: 'Cinzel', fontSize: 38, fontWeight: '900',
+562:         fill: 0xfff4c8, stroke: { color: 0x3b1803, width: 7 },
+563:         dropShadow: { color: 0xff6a1a, blur: 14, distance: 0, alpha: 0.95 }
+564:       }
+565:     });
+566:     t.anchor.set(0.5);
+567:     t.position.set(x, y);
+568:     t.scale.set(0.45);
+569:     fxLayer.addChild(t);
+570:     state.floatingTexts.push({ txt: t, life: 1, vy: -0.7 });
+571:   }
+572: 
+573:   // --- ANA PIXI TICKER ---
+574:   app.ticker.add((ticker) => {
+575:     const dt = ticker.deltaTime;
+625:     root.scale.set(state.zoom);
+626: 
+627:     let sx = 0, sy = 0;
+628:     if (state.shakeTime > 0) {
+629:       state.shakeTime = Math.max(0, state.shakeTime - ms);
+630:       const ratio = state.shakeTime / Math.max(1, state.shakeDuration);
+631:       sx = (Math.random() - 0.5) * 2 * state.shakeMag * ratio;
+632:       sy = (Math.random() - 0.5) * 2 * state.shakeMag * ratio;
+633:       if (state.shakeTime === 0) state.shakeMag = 0;
+634:     }
+635:     root.position.set(STAGE_W / 2 + sx, STAGE_H / 2 + sy);
+636: 
+637:     if (flashOverlay.alpha > 0.005) flashOverlay.alpha = Math.max(0, flashOverlay.alpha - 0.045 * dt);
+638:     else flashOverlay.alpha = 0;
+639: 
+640:     for (let i = state.steamPuffs.length - 1; i >= 0; i--) {
+641:       const st = state.steamPuffs[i];
+642:       st.gfx.x += st.vx * dt;
+643:       st.gfx.y += st.vy * dt;
+644:       st.scale += 0.03 * dt;
+645:       st.gfx.scale.set(st.scale);
+646:       st.life -= 0.018 * dt;
+647:       st.gfx.alpha = Math.max(0, st.life * 0.5);
+648:       if (st.life <= 0) { steamLayer.removeChild(st.gfx); st.gfx.destroy(); state.steamPuffs.splice(i, 1); }
+649:     }
+650: 
+651:     for (let i = state.rings.length - 1; i >= 0; i--) {
+652:       const rg = state.rings[i];
+653:       rg.r += (rg.maxR - rg.r) * 0.16 * dt;
+654:       rg.life -= 0.045 * dt;
+655:       rg.gfx.clear();
+656:       if (rg.life > 0) rg.gfx.circle(0, 0, rg.r).stroke({ width: 6 * rg.life, color: rg.color, alpha: rg.life });
+657:       else { fxLayer.removeChild(rg.gfx); rg.gfx.destroy(); state.rings.splice(i, 1); }
+658:     }
+659: 
+660:     for (let i = state.particles.length - 1; i >= 0; i--) {
+661:       const p = state.particles[i];
+662:       p.vx *= 0.982;
+663:       p.vy += p.gravity * dt;
+664:       p.gfx.x += p.vx * dt;
+665:       p.gfx.y += p.vy * dt;
+690:   });
+691: 
+692:   function clearRoundVisuals() {
+693:     state.cycleToken++;
+694:     teaseLayer.removeChildren();
+695:     vsBannerLayer.removeChildren();
+696:     vsForegroundLayer.removeChildren();
+697:     winFrameLayer.removeChildren();
+698:     lineLayer.removeChildren();
+699:     lineBadgeLayer.removeChildren();
+700:     state.activeVsColumns = [];
+701:     state.winningSlots = [];
+702:     state.targetZoom = 1.0;
+703:     $('win-banner').classList.add('hidden');
+704:     $('vs-total-banner').classList.add('hidden');
+705:     $('retrigger-banner').classList.add('hidden');
+706:     reels.forEach(r => r.slots.forEach((slot) => {
+707:       slot.box.alpha = 1;
+708:       slot.box.scale.set(1);
+709:     }));
+710:   }
+711: 
+712:   function showTeaseColumn(col) {
+950:         sparkArc.moveTo(12, BOARD_H / 2);
+951:         for (let seg = 1; seg <= 5; seg++) {
+952:           sparkArc.lineTo(12 + (CELL_W - 24) * (seg / 5), BOARD_H / 2 + (Math.random() - 0.5) * 28);
+953:         }
+954:         sparkArc.stroke({ width: 3.2, color: s % 2 === 0 ? 0x9cf3ff : 0xffb36b, alpha: 0.95 });
+955:         await gameSleep(30);
+956:       }
+957: 
+958:       // 3. Çapraz Kılıç Kesiği + Flash + Şok Dalgası
+959:       AUDIO.playSfx('vs_clash', { volume: 1.0 });
+960:       triggerShake(15, 380);
+961:       triggerFlash(0.46);
+962:       spawnShockwave(centerX, centerY, 0xfff1bf, 215);
+963:       spawnShockwave(centerX, centerY, winAccent, 150);
+964:       spawnBurst(centerX, centerY, 72, [0xffffff, 0xfff1bf, winAccent, 0xff7b29]);
+965: 
+966:       const slash = new PIXI.Graphics();
+967:       slash.moveTo(-12, BOARD_H * 0.72).lineTo(CELL_W + 12, BOARD_H * 0.28).stroke({ width: 16, color: 0xffae34, alpha: 0.85, cap: 'round' });
+968:       slash.moveTo(-12, BOARD_H * 0.28).lineTo(CELL_W + 12, BOARD_H * 0.72).stroke({ width: 14, color: 0x49d6ff, alpha: 0.8, cap: 'round' });
+969:       slash.moveTo(-12, BOARD_H * 0.72).lineTo(CELL_W + 12, BOARD_H * 0.28).stroke({ width: 6, color: 0xffffff, alpha: 1, cap: 'round' });
+970:       slash.moveTo(-12, BOARD_H * 0.28).lineTo(CELL_W + 12, BOARD_H * 0.72).stroke({ width: 5, color: 0xffffff, alpha: 1, cap: 'round' });
+971:       fgColBox.addChild(slash);
+972: 
+973:       // 4. KAYBEDEN PARÇALANIP SÖNERKEN KAZANAN ÇARPAN MERKEZE KAYAR
+974:       const winnerTxt = isBlueWin ? topTxt : botTxt;
+975:       const loserTxt = isBlueWin ? botTxt : topTxt;
+976:       const loserY = BOARD_Y + loserTxt.y;
+977:       spawnBurst(centerX, loserY, 30, [0x99aacc, 0x556677, 0xfff1bf]);
+978: 
+979:       const winStartY = winnerTxt.y;
+980:       const winTargetY = BOARD_H * 0.50;
+981:       const glideFrames = state.turbo ? 8 : 13;
+982: 
+983:       for (let f = 1; f <= glideFrames; f++) {
+984:         const t = f / glideFrames;
+985:         const ease = 1 - Math.pow(1 - t, 3);
+986:         slash.alpha = Math.max(0, 1 - t * 1.4);
+987:         emblem.alpha = Math.max(0, 1 - t * 1.8);
+988:         sparkArc.alpha = Math.max(0, 1 - t * 2);
+989: 
+990:         loserTxt.alpha = Math.max(0, 1 - t * 1.6);
+991:         loserTxt.scale.set(1 - t * 0.55);
+992:         loserTxt.x = CELL_W / 2 + (Math.random() - 0.5) * 14 * (1 - t);
+993: 
+994:         winnerTxt.y = winStartY + (winTargetY - winStartY) * ease;
+995:         const popScale = t < 0.7 ? (1 + 0.52 * (t / 0.7)) : (1.52 - 0.30 * ((t - 0.7) / 0.3));
+996:         winnerTxt.scale.set(popScale);
+997:         await gameSleep(18);
+998:       }
+999: 
+1000:       fgColBox.removeChild(loserTxt, emblem, sparkArc, slash);
+1001:       loserTxt.destroy(); emblem.destroy(); sparkArc.destroy(); slash.destroy();
+1002: 
+1003:       // Kazanan tarafın şeffaf enerji halesi (SİYAH DAİRE / KUTU YOK!)
+1004:       const wash = new PIXI.Graphics();
+1005:       wash.roundRect(6, 6, CELL_W - 12, BOARD_H - 12, 10)
+1006:         .fill({ color: isBlueWin ? 0x052440 : 0x3b1202, alpha: 0.34 })
+1007:         .stroke({ width: 3.5, color: winAccent, alpha: 0.9 });
+1008:       bannerWrap.addChild(wash);
+1009: 
+1010:       // Dönen saf enerji halkaları (şeffaf, arkasından vs_banner görünür)
+1011:       const energyRings = new PIXI.Graphics();
+1012:       energyRings.position.set(CELL_W / 2, winTargetY);
+1013:       energyRings.circle(0, 0, 56).fill({ color: winAccent, alpha: 0.16 });
+1014:       energyRings.arc(0, 0, 58, -Math.PI * 0.75, -Math.PI * 0.1).stroke({ width: 3.5, color: 0xfff1bf, alpha: 0.92, cap: 'round' });
+1015:       energyRings.arc(0, 0, 58, Math.PI * 0.25, Math.PI * 0.9).stroke({ width: 3.5, color: winAccent, alpha: 0.95, cap: 'round' });
+1016:       energyRings.circle(0, 0, 48).stroke({ width: 1.5, color: 0xf6d379, alpha: 0.65 });
+1017:       fgColBox.addChildAt(energyRings, 0);
+1018: 
+1019:       // Çarpan stili altın/parlak netliğe oturur
+1020:       winnerTxt.style = new PIXI.TextStyle({
+1021:         fontFamily: 'Cinzel', fontSize: 64, fontWeight: '900', fill: 0xffffff,
+1022:         stroke: { color: isBlueWin ? 0x052745 : 0x5c1d02, width: 9 },
+1023:         dropShadow: { color: winAccent, blur: 22, distance: 0, alpha: 1 }
+1024:       });
+1025:       winnerTxt.position.set(CELL_W / 2, winTargetY);
+1026:       winnerTxt.scale.set(1);
+1027: 
+1028:       // Kutusuz, yüksek kontrastlı dövme altın WILD REEL yazısı
+1029:       const wildTxt = new PIXI.Text({
+1030:         text: 'WILD REEL',
+1031:         style: {
+1032:           fontFamily: 'Cinzel', fontSize: 19, fontWeight: '900', fill: 0xfff1bf, letterSpacing: 2.5,
+1033:           stroke: { color: 0x1a0b03, width: 6 },
+1034:           dropShadow: { color: winAccent, blur: 12, distance: 0, alpha: 0.95 }
+1035:         }
+1036:       });
+1037:       wildTxt.anchor.set(0.5);
+1038:       wildTxt.position.set(CELL_W / 2, winTargetY - 68);
+1039:       fgColBox.addChild(wildTxt);
+1040: 
+1041:       const edgeGfx = new PIXI.Graphics();
+1042:       fgColBox.addChild(edgeGfx);
+1043:       state.activeVsColumns.push({ ringGfx: energyRings, multTxt: winnerTxt, edgeGfx, accent: winAccent });
+1044: 
+1045:       spawnShockwave(centerX, centerY, winAccent, 140);
+1046:       await gameSleep(state.turbo ? 180 : 380);
+1047:     }
+1048: 
+1049:     // 2+ VS aynı turda açıldıysa toplam çarpan vurgusu (ör: 4× + 10× = 14×)
+1050:     if (cols.length >= 2) {
+1051:       const mults = cols.map(c => vsReels[String(c)].winMult);
+1052:       const totalM = mults.reduce((a, b) => a + b, 0);
+1053:       $('vs-total-text').textContent = `${mults.map(m => `${m}×`).join(' + ')} = ${totalM}×`;
+1054:       $('vs-total-banner').classList.remove('hidden');
+1055:       AUDIO.playSfx('bonus_trigger', { volume: 0.85, rate: 1.12 });
+1056:       spawnBurst(STAGE_W / 2, STAGE_H / 2, 42, [0xfff1bf, 0xff7b29, 0x49d6ff]);
+1057:       await gameSleep(state.turbo ? 420 : 880);
+1058:       $('vs-total-banner').classList.add('hidden');
+1059:     }
+1060: 
+1061:     state.targetZoom = 1.0;
+1062:     AUDIO.duckMusic(false);
+1063:   }
+1064: 
+1065:   // --- ÖDEME ÇİZGİLERİ (ÇİFT METİN ÇAKIŞMASI KALDIRILDI) ---
+1066:   function renderWinSubset(winList, bet, showSingleBadge = false) {
+1067:     winFrameLayer.removeChildren();
+1068:     lineLayer.removeChildren();
+1069:     lineBadgeLayer.removeChildren();
+1070: 
+1071:     const hitCells = new Set();
+1072:     winList.forEach((w) => {
+1073:       const line = PAYLINES[w.line];
+1074:       for (let c = 0; c < w.count; c++) hitCells.add(`${c}_${line[c]}`);
+1075:     });
+1076: 
+1077:     state.winningSlots = [];
+1078:     reels.forEach((reel, c) => {
+1079:       reel.slots.forEach((slot, r) => {
+1080:         const isHit = hitCells.has(`${c}_${r}`);
+1081:         slot.box.alpha = isHit ? 1.0 : 0.34;
+1082:         if (isHit) state.winningSlots.push(slot);
+1083:         else slot.box.scale.set(1);
+1084:       });
+1085:     });
+1086: 
+1087:     const framesGfx = new PIXI.Graphics();
+1088:     hitCells.forEach((key) => {
+1089:       const [c, r] = key.split('_').map(Number);
+1090:       const x = c * CELL_W + 5;
+1091:       const y = r * CELL_H + 5;
+1092:       framesGfx.roundRect(x, y, CELL_W - 10, CELL_H - 10, 12)
+1093:         .fill({ color: 0xf6d379, alpha: 0.12 })
+1094:         .stroke({ width: 5, color: 0xff8c24, alpha: 0.5 });
+1095:       framesGfx.roundRect(x + 2, y + 2, CELL_W - 14, CELL_H - 14, 10)
+1096:         .stroke({ width: 2.5, color: 0xfff1bf, alpha: 0.96 });
+1097:     });
+1098:     winFrameLayer.addChild(framesGfx);
+1099: 
+1100:     const glowW = showSingleBadge ? 10 : 6;
+1101:     const coreW = showSingleBadge ? 3.5 : 2.1;
+1102: 
+1103:     winList.forEach((w) => {
+1104:       const line = PAYLINES[w.line];
+1105:       const color = LINE_COLORS[w.line % LINE_COLORS.length];
+1106:       const g = new PIXI.Graphics();
+1107:       for (let c = 0; c < w.count; c++) {
+1108:         const x = c * CELL_W + CELL_W / 2;
+1109:         const y = line[c] * CELL_H + CELL_H / 2;
+1110:         if (c === 0) g.moveTo(x, y);
+1111:         else g.lineTo(x, y);
+1112:       }
+1113:       g.stroke({ width: glowW, color, alpha: showSingleBadge ? 0.55 : 0.28, join: 'round', cap: 'round' });
+1114:       for (let c = 0; c < w.count; c++) {
+1115:         const x = c * CELL_W + CELL_W / 2;
+1116:         const y = line[c] * CELL_H + CELL_H / 2;
+1117:         if (c === 0) g.moveTo(x, y);
+1118:         else g.lineTo(x, y);
+1119:       }
+1120:       g.stroke({ width: coreW, color: 0xfff8dc, alpha: showSingleBadge ? 0.96 : 0.7, join: 'round', cap: 'round' });
+1121:       if (showSingleBadge) {
+1122:         for (let c = 0; c < w.count; c++) {
+1123:           g.circle(c * CELL_W + CELL_W / 2, line[c] * CELL_H + CELL_H / 2, 5)
+1124:             .fill({ color: 0xffffff }).stroke({ width: 2, color });
+1125:         }
+1126:       }
+1127:       lineLayer.addChild(g);
+1128:     });
+1129: 
+1130:     if (showSingleBadge && winList.length === 1) {
+1131:       const w = winList[0];
+1132:       const line = PAYLINES[w.line];
+1133:       const midCol = Math.min(2, Math.floor((w.count - 1) / 2));
+1134:       const bx = midCol * CELL_W + CELL_W / 2;
+1135:       const by = line[midCol] * CELL_H + CELL_H / 2;
+1136: 
+1137:       const labelTxt = new PIXI.Text({
+1138:         text: `+${RGS.formatMoney(w.win * bet)}`,
+1139:         style: {
+1140:           fontFamily: 'Cinzel', fontSize: 22, fontWeight: '900',
+1141:           fill: 0xfff4c8, stroke: { color: 0x3b1803, width: 5 },
+1142:           dropShadow: { color: 0xff6a1a, blur: 10, distance: 0 }
+1143:         }
+1144:       });
+1145:       labelTxt.anchor.set(0.5);
+1146:       const pw = Math.max(96, labelTxt.width + 28);
+1147:       const pill = new PIXI.Graphics();
+1148:       pill.roundRect(-pw / 2, -18, pw, 36, 18)
+1149:         .fill({ color: 0x1c0f05, alpha: 0.92 })
+1150:         .stroke({ width: 2.2, color: 0xf6d379 });
+1151:       const badge = new PIXI.Container();
+1152:       badge.position.set(Math.max(pw / 2 + 8, Math.min(BOARD_W - pw / 2 - 8, bx)), Math.max(26, by));
+1153:       badge.addChild(pill, labelTxt);
+1154:       lineBadgeLayer.addChild(badge);
+1155:     }
+1156:   }
+1157: 
+1158:   async function startIdleWinCycle(wins, bet, token) {
+1159:     if (wins.length <= 1) return;
+1160:     let idx = 0;
+1161:     while (state.cycleToken === token && !state.spinning) {
+1162:       renderWinSubset([wins[idx]], bet, true);
+1163:       idx = (idx + 1) % wins.length;
+1164:       await gameSleep(1200);
+1165:     }
+1166:   }
+1167: 
+1168:   async function showWinLines(wins, winMoney, bet, allowIdleCycle = false) {
+1169:     if (!wins.length || winMoney <= 0) return;
+1170: 
+1171:     AUDIO.playSfx('win', { volume: 1.0 });
+1172:     $('win-banner-amount').textContent = RGS.formatMoney(winMoney);
+1173:     $('win-banner').classList.remove('hidden');
+1174: 
+1175:     renderWinSubset(wins, bet, wins.length === 1);
+1176:     // Tek çizgi kazancında rozet zaten tutarı gösterdiği için çift uçan metin üretme!
+1177:     if (wins.length > 1) {
+1178:       spawnFloatingWin(`+${RGS.formatMoney(winMoney)}`, STAGE_W / 2, STAGE_H / 2);
+1179:     }
+1180:     spawnBurst(STAGE_W / 2, STAGE_H / 2, 24, [0xfff1bf, 0xf6d379, 0xff7b29]);
+1181: 
+1182:     state.skipWin = false;
+1183:     const waitTotal = state.turbo ? 420 : 960;
+1184:     let waited = 0;
+1185:     while (!state.skipWin && waited < waitTotal) {
+1186:       await gameSleep(40);
+1187:       waited += 40;
+1188:     }
+1189: 
+1190:     if (allowIdleCycle && wins.length > 1 && !state.skipWin) {
+1191:       startIdleWinCycle(wins, bet, state.cycleToken);
+1192:     }
+1193:   }
+1194: 
+1195:   // --- ÖN KATMAN 3D ALTIN SİKKE YAĞMURU ---
+1825:         if (RGS.isReplay) {
+1826:           state.replayData = await RGS.fetchReplayRound();
+1827:         }
+1828:         syncMoneyUI(0, false);
+1829:       } catch (err) {
+1830:         if (!RGS.isReplay) $('mode-badge').classList.remove('hidden');
+1831:         showToast(RGS.isReplay ? 'REPLAY LOAD ERROR' : 'RGS AUTH FAILED — DEMO FALLBACK');
+1832:       }
+1833: 
+1834:       const allTexKeys = [...SYMBOL_KEYS, ...EXTRA_TEXTURES];
+1835:       for (let i = 0; i < allTexKeys.length; i++) {
+1836:         const key = allTexKeys[i];
+1837:         try {
+1838:           state.textures[key] = await PIXI.Assets.load(`assets/img/${key}.png`);
+1839:         } catch (e) {
+1840:           console.warn(`[Img] Eksik: assets/img/${key}.png`);
+1841:           state.textures[key] = PIXI.Texture.EMPTY;
+1842:         }
+1843:         setLoad(((i + 1) / allTexKeys.length) * 90, 'LOADING FORGE');
+1844:       }
+1845: 
+1846:       populateInitialReels();
+1847:       resizeStage();
+1848:       setLoad(100, 'READY');
+1849:     })();
+1850: 
+1851:     await introDone;
+1852:     await loadAssets;
+1853: 
+1854:     $('load-wrap').classList.add('hidden');
+1855:     $('btn-splash-play').textContent = RGS.isReplay ? 'PRESS TO WATCH REPLAY!' : 'PRESS TO CONTINUE!';

@@ -406,11 +406,20 @@
   function createSlot() {
     const box = new PIXI.Container();
 
-    const tile = new PIXI.Sprite(state.textures.tile_bg || PIXI.Texture.EMPTY);
-    tile.anchor.set(0.5);
-    tile.width = CELL_W - 8;
-    tile.height = CELL_H - 8;
-    tile.alpha = 0.94;
+    const tw = CELL_W - 8;
+    const th = CELL_H - 8;
+    const tile = new PIXI.Graphics();
+    tile.roundRect(-tw / 2, -th / 2, tw, th, 11)
+      .fill({ color: 0x0f141d, alpha: 0.94 })
+      .stroke({ width: 1.5, color: 0x704e1e, alpha: 0.72 });
+    tile.roundRect(-tw / 2 + 4, -th / 2 + 4, tw - 8, th - 8, 8)
+      .fill({ color: 0x080b11, alpha: 0.82 })
+      .stroke({ width: 1, color: 0x2a2016, alpha: 0.75 });
+    const rx = tw / 2 - 8;
+    const ry = th / 2 - 8;
+    [[-rx, -ry], [rx, -ry], [-rx, ry], [rx, ry]].forEach(([px, py]) => {
+      tile.circle(px, py, 1.8).fill({ color: 0xb98635, alpha: 0.42 });
+    });
     box.addChild(tile);
 
     const aura = new PIXI.Graphics();
@@ -452,12 +461,6 @@
     slot.symKey = symKey;
     const style = SYMBOL_STYLE[symKey] || SYMBOL_STYLE.L1;
     const tex = state.textures[symKey];
-
-    if (state.textures.tile_bg) {
-      slot.tile.texture = state.textures.tile_bg;
-      slot.tile.width = CELL_W - 8;
-      slot.tile.height = CELL_H - 8;
-    }
 
     slot.sp.texture = tex || PIXI.Texture.EMPTY;
     const w = tex && tex.width ? tex.width : 512;
@@ -570,6 +573,54 @@
     state.floatingTexts.push({ txt: t, life: 1, vy: -0.7 });
   }
 
+  state.vfxFrames = { clash: [], burst: [], frame: [] };
+  state.vfxSprites = [];
+
+  function sliceVfxSheet(baseTex, cols = 4, rows = 4) {
+    if (!baseTex || baseTex === PIXI.Texture.EMPTY) return [];
+    const cw = Math.floor(baseTex.width / cols);
+    const ch = Math.floor(baseTex.height / rows);
+    const frames = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        frames.push(new PIXI.Texture({
+          source: baseTex.source,
+          frame: new PIXI.Rectangle(c * cw, r * ch, cw, ch)
+        }));
+      }
+    }
+    return frames;
+  }
+
+  function spawnVfxSheet(type, x, y, opts = {}) {
+    const frames = state.vfxFrames && state.vfxFrames[type];
+    if (!frames || !frames.length) return null;
+    const spr = new PIXI.Sprite(frames[0]);
+    spr.anchor.set(0.5);
+    spr.position.set(x, y);
+    spr.blendMode = 'add';
+    spr.alpha = opts.alpha ?? 1.0;
+    if (opts.width && opts.height) {
+      spr.width = opts.width;
+      spr.height = opts.height;
+    } else {
+      const sz = opts.size ?? 256;
+      spr.width = sz;
+      spr.height = sz;
+    }
+    if (opts.rotation) spr.rotation = opts.rotation;
+    const layer = opts.layer || fxLayer;
+    layer.addChild(spr);
+    state.vfxSprites.push({
+      spr,
+      frames,
+      frame: opts.startFrame ?? 0,
+      fps: opts.fps ?? 30,
+      loop: !!opts.loop
+    });
+    return spr;
+  }
+
   // --- ANA PIXI TICKER ---
   app.ticker.add((ticker) => {
     const dt = ticker.deltaTime;
@@ -634,8 +685,30 @@
     }
     root.position.set(STAGE_W / 2 + sx, STAGE_H / 2 + sy);
 
-    if (flashOverlay.alpha > 0.005) flashOverlay.alpha = Math.max(0, flashOverlay.alpha - 0.045 * dt);
+    if (flashOverlay.alpha > 0.005) flashOverlay.alpha = Math.max(0, flashOverlay.alpha - 0.065 * dt);
     else flashOverlay.alpha = 0;
+
+    for (let i = state.vfxSprites.length - 1; i >= 0; i--) {
+      const v = state.vfxSprites[i];
+      if (!v.spr || v.spr.destroyed || !v.spr.parent) {
+        if (v.spr && !v.spr.destroyed) v.spr.destroy();
+        state.vfxSprites.splice(i, 1);
+        continue;
+      }
+      v.frame += (v.fps / 60) * dt;
+      if (v.loop) {
+        v.spr.texture = v.frames[Math.floor(v.frame) % v.frames.length];
+      } else {
+        const idx = Math.floor(v.frame);
+        if (idx >= v.frames.length) {
+          v.spr.parent.removeChild(v.spr);
+          v.spr.destroy();
+          state.vfxSprites.splice(i, 1);
+        } else {
+          v.spr.texture = v.frames[idx];
+        }
+      }
+    }
 
     for (let i = state.steamPuffs.length - 1; i >= 0; i--) {
       const st = state.steamPuffs[i];
@@ -713,7 +786,7 @@
     teaseLayer.removeChildren();
     const g = new PIXI.Graphics();
     g.roundRect(col * CELL_W + 2, 2, CELL_W - 4, BOARD_H - 4, 12)
-      .fill({ color: 0xff5a12, alpha: 0.22 })
+      .fill({ color: 0xff5a12, alpha: 0.10 })
       .stroke({ width: 6, color: 0xff9a2e, alpha: 0.95 });
     g.roundRect(col * CELL_W + 8, 8, CELL_W - 16, BOARD_H - 16, 8)
       .stroke({ width: 2.5, color: 0xfff2c2, alpha: 0.85 });
@@ -758,12 +831,74 @@
     });
 
     if (teaseHoldMs > 0) {
-      await exitPromise;
-      let waited = 0;
-      while (!state.quickStop && waited < teaseHoldMs) {
-        await gameSleep(35);
-        waited += 35;
+      const teasePool = (typeof SYMBOL_KEYS !== 'undefined' && SYMBOL_KEYS.length)
+        ? SYMBOL_KEYS
+        : ['H1', 'H2', 'H3', 'H4', 'L1', 'L2', 'L3', 'L4'];
+      const spinSlots = [];
+      const totalSpinSlots = ROWS + 2;
+      for (let i = 0; i < totalSpinSlots; i++) {
+        const s = createSlot();
+        fitSlot(s, teasePool[Math.floor(Math.random() * teasePool.length)]);
+        s.box.x = CELL_W / 2;
+        s.box.y = -CELL_H * (i + 0.5);
+        s.box.alpha = 0.86;
+        s.sp.scale.set(s.baseScale * 0.96, s.baseScale * 1.18);
+        reel.container.addChild(s.box);
+        spinSlots.push(s);
       }
+      await new Promise((resolve) => {
+        let elapsed = 0;
+        let last = performance.now();
+        const speedPxPerMs = (CELL_H * 14.5) / 1000;
+        const wrapSpan = totalSpinSlots * CELL_H;
+        const bottomLimit = BOARD_H + CELL_H * 0.65;
+        function spinTick(now) {
+          if (!state.paused) {
+            const delta = Math.min(60, now - last);
+            elapsed += delta;
+            const dy = delta * speedPxPerMs;
+            for (let i = 0; i < spinSlots.length; i++) {
+              const s = spinSlots[i];
+              s.box.y += dy;
+              if (s.box.y > bottomLimit) {
+                s.box.y -= wrapSpan;
+                fitSlot(s, teasePool[Math.floor(Math.random() * teasePool.length)]);
+                s.box.alpha = 0.86;
+                s.sp.scale.set(s.baseScale * 0.96, s.baseScale * 1.18);
+              }
+            }
+          }
+          last = now;
+          if (state.quickStop || elapsed >= teaseHoldMs) {
+            const flushDur = state.quickStop ? 65 : 135;
+            const flushStartYs = spinSlots.map(s => s.box.y);
+            let fElapsed = 0;
+            let fLast = performance.now();
+            function flushTick(fNow) {
+              if (!state.paused) fElapsed += Math.min(60, fNow - fLast);
+              fLast = fNow;
+              const fp = Math.min(1, fElapsed / flushDur);
+              for (let i = 0; i < spinSlots.length; i++) {
+                spinSlots[i].box.y = flushStartYs[i] + fp * (BOARD_H + CELL_H);
+                spinSlots[i].box.alpha = Math.max(0, 0.86 * (1 - fp * 1.25));
+              }
+              if (fp >= 1) {
+                spinSlots.forEach(s => {
+                  if (s.box.parent) s.box.parent.removeChild(s.box);
+                  s.box.destroy({ children: true });
+                });
+                return;
+              }
+              requestAnimationFrame(flushTick);
+            }
+            requestAnimationFrame(flushTick);
+            return resolve();
+          }
+          requestAnimationFrame(spinTick);
+        }
+        requestAnimationFrame(spinTick);
+      });
+      await exitPromise;
     } else {
       // Sıkı örtüşme: eski sütun daha yarısına gelmeden yeni sütun üstten girer
       await gameSleep(state.turbo || state.quickStop ? 28 : 52);
@@ -955,19 +1090,14 @@
         await gameSleep(30);
       }
 
-      // 3. Çapraz Kılıç Kesiği + Flash + Şok Dalgası
+      // 3. Çapraz Kılıç Kesiği (DaVinci VFX) + Dengeli Flash
       AUDIO.playSfx('vs_clash', { volume: 1.0 });
       triggerShake(15, 380);
-      triggerFlash(0.46);
-      spawnShockwave(centerX, centerY, 0xfff1bf, 215);
-      spawnShockwave(centerX, centerY, winAccent, 150);
-      spawnBurst(centerX, centerY, 72, [0xffffff, 0xfff1bf, winAccent, 0xff7b29]);
+      triggerFlash(0.14);
+      spawnVfxSheet('clash', centerX, centerY, { size: Math.max(CELL_W * 2.55, 400), fps: 30, alpha: 1.0 });
+      spawnBurst(centerX, centerY, 20, [0xffffff, 0xfff1bf, winAccent, 0xff7b29]);
 
-      const slash = new PIXI.Graphics();
-      slash.moveTo(-12, BOARD_H * 0.72).lineTo(CELL_W + 12, BOARD_H * 0.28).stroke({ width: 16, color: 0xffae34, alpha: 0.85, cap: 'round' });
-      slash.moveTo(-12, BOARD_H * 0.28).lineTo(CELL_W + 12, BOARD_H * 0.72).stroke({ width: 14, color: 0x49d6ff, alpha: 0.8, cap: 'round' });
-      slash.moveTo(-12, BOARD_H * 0.72).lineTo(CELL_W + 12, BOARD_H * 0.28).stroke({ width: 6, color: 0xffffff, alpha: 1, cap: 'round' });
-      slash.moveTo(-12, BOARD_H * 0.28).lineTo(CELL_W + 12, BOARD_H * 0.72).stroke({ width: 5, color: 0xffffff, alpha: 1, cap: 'round' });
+      const slash = new PIXI.Container();
       fgColBox.addChild(slash);
 
       // 4. KAYBEDEN PARÇALANIP SÖNERKEN KAZANAN ÇARPAN MERKEZE KAYAR
@@ -1040,8 +1170,15 @@
 
       const edgeGfx = new PIXI.Graphics();
       fgColBox.addChild(edgeGfx);
-      state.activeVsColumns.push({ ringGfx: energyRings, multTxt: winnerTxt, edgeGfx, accent: winAccent });
+      state.activeVsColumns.push({ col, ringGfx: energyRings, multTxt: winnerTxt, edgeGfx, accent: winAccent });
 
+      const lockBurst = spawnVfxSheet('burst', CELL_W / 2, winTargetY, {
+        size: CELL_W * 1.85,
+        fps: 34,
+        alpha: 0.58,
+        layer: fgColBox
+      });
+      if (lockBurst) fgColBox.setChildIndex(lockBurst, 0);
       spawnShockwave(centerX, centerY, winAccent, 140);
       await gameSleep(state.turbo ? 180 : 380);
     }
@@ -1053,7 +1190,8 @@
       $('vs-total-text').textContent = `${mults.map(m => `${m}×`).join(' + ')} = ${totalM}×`;
       $('vs-total-banner').classList.remove('hidden');
       AUDIO.playSfx('bonus_trigger', { volume: 0.85, rate: 1.12 });
-      spawnBurst(STAGE_W / 2, STAGE_H / 2, 42, [0xfff1bf, 0xff7b29, 0x49d6ff]);
+      spawnVfxSheet('burst', STAGE_W / 2, STAGE_H / 2, { size: 420, fps: 30, alpha: 0.95 });
+      spawnBurst(STAGE_W / 2, STAGE_H / 2, 22, [0xfff1bf, 0xff7b29, 0x49d6ff]);
       await gameSleep(state.turbo ? 420 : 880);
       $('vs-total-banner').classList.add('hidden');
     }
@@ -1084,18 +1222,37 @@
       });
     });
 
-    const framesGfx = new PIXI.Graphics();
-    hitCells.forEach((key) => {
-      const [c, r] = key.split('_').map(Number);
-      const x = c * CELL_W + 5;
-      const y = r * CELL_H + 5;
-      framesGfx.roundRect(x, y, CELL_W - 10, CELL_H - 10, 12)
-        .fill({ color: 0xf6d379, alpha: 0.12 })
-        .stroke({ width: 5, color: 0xff8c24, alpha: 0.5 });
-      framesGfx.roundRect(x + 2, y + 2, CELL_W - 14, CELL_H - 14, 10)
-        .stroke({ width: 2.5, color: 0xfff1bf, alpha: 0.96 });
-    });
-    winFrameLayer.addChild(framesGfx);
+    const activeVsCols = new Set(state.activeVsColumns.map(v => v.col));
+    const hasVfxFrame = state.vfxFrames && state.vfxFrames.frame && state.vfxFrames.frame.length > 0;
+    if (hasVfxFrame) {
+      hitCells.forEach((key) => {
+        const [c, r] = key.split('_').map(Number);
+        if (activeVsCols.has(c)) return;
+        const cx = c * CELL_W + CELL_W / 2;
+        const cy = r * CELL_H + CELL_H / 2;
+        spawnVfxSheet('frame', cx, cy, {
+          width: CELL_W * 1.24,
+          height: CELL_H * 1.24,
+          fps: 24,
+          loop: true,
+          alpha: 0.96,
+          layer: winFrameLayer
+        });
+      });
+    } else {
+      const framesGfx = new PIXI.Graphics();
+      hitCells.forEach((key) => {
+        const [c, r] = key.split('_').map(Number);
+        const x = c * CELL_W + 5;
+        const y = r * CELL_H + 5;
+        framesGfx.roundRect(x, y, CELL_W - 10, CELL_H - 10, 12)
+          .fill({ color: 0xf6d379, alpha: 0.12 })
+          .stroke({ width: 5, color: 0xff8c24, alpha: 0.5 });
+        framesGfx.roundRect(x + 2, y + 2, CELL_W - 14, CELL_H - 14, 10)
+          .stroke({ width: 2.5, color: 0xfff1bf, alpha: 0.96 });
+      });
+      winFrameLayer.addChild(framesGfx);
+    }
 
     const glowW = showSingleBadge ? 10 : 6;
     const coreW = showSingleBadge ? 3.5 : 2.1;
@@ -1130,7 +1287,13 @@
     if (showSingleBadge && winList.length === 1) {
       const w = winList[0];
       const line = PAYLINES[w.line];
-      const midCol = Math.min(2, Math.floor((w.count - 1) / 2));
+      const vsCols = new Set(state.activeVsColumns.map(v => v.col));
+      let midCol = Math.min(2, Math.floor((w.count - 1) / 2));
+      if (vsCols.has(midCol)) {
+        for (let c = 0; c < w.count; c++) {
+          if (!vsCols.has(c)) { midCol = c; break; }
+        }
+      }
       const bx = midCol * CELL_W + CELL_W / 2;
       const by = line[midCol] * CELL_H + CELL_H / 2;
 
@@ -1173,11 +1336,34 @@
     $('win-banner').classList.remove('hidden');
 
     renderWinSubset(wins, bet, wins.length === 1);
+    const hasCenterVs = state.activeVsColumns.some(v => v.col === 2);
     // Tek çizgi kazancında rozet zaten tutarı gösterdiği için çift uçan metin üretme!
     if (wins.length > 1) {
-      spawnFloatingWin(`+${RGS.formatMoney(winMoney)}`, STAGE_W / 2, STAGE_H / 2);
+      const winTextY = hasCenterVs ? (BOARD_Y + 52) : (STAGE_H / 2);
+      spawnFloatingWin(`+${RGS.formatMoney(winMoney)}`, STAGE_W / 2, winTextY);
     }
-    spawnBurst(STAGE_W / 2, STAGE_H / 2, 24, [0xfff1bf, 0xf6d379, 0xff7b29]);
+    const burstCells = [];
+    const seenBurst = new Set();
+    for (const w of wins) {
+      const line = PAYLINES[w.line];
+      for (let c = 0; c < w.count; c++) {
+        const k = `${c}_${line[c]}`;
+        if (!seenBurst.has(k)) {
+          seenBurst.add(k);
+          burstCells.push([c, line[c]]);
+        }
+      }
+    }
+    const step = Math.max(1, Math.floor(burstCells.length / 4));
+    for (let i = 0, spawned = 0; i < burstCells.length && spawned < 4; i += step, spawned++) {
+      const [c, r] = burstCells[i];
+      spawnVfxSheet('burst', BOARD_X + c * CELL_W + CELL_W / 2, BOARD_Y + r * CELL_H + CELL_H / 2, {
+        size: CELL_W * 1.42,
+        fps: 34,
+        alpha: 0.64
+      });
+    }
+    spawnBurst(STAGE_W / 2, STAGE_H / 2, 14, [0xfff1bf, 0xf6d379, 0xff7b29]);
 
     state.skipWin = false;
     const waitTotal = state.turbo ? 420 : 960;
@@ -1841,6 +2027,21 @@
           state.textures[key] = PIXI.Texture.EMPTY;
         }
         setLoad(((i + 1) / allTexKeys.length) * 90, 'LOADING FORGE');
+      }
+
+      const vfxAssets = {
+        clash: 'assets/vfx/vfx_vs_clash.png',
+        burst: 'assets/vfx/vfx_hit_burst.png',
+        frame: 'assets/vfx/vfx_win_frame.png'
+      };
+      for (const [vKey, vPath] of Object.entries(vfxAssets)) {
+        try {
+          const vTex = await PIXI.Assets.load(vPath);
+          state.vfxFrames[vKey] = sliceVfxSheet(vTex, 4, 4);
+        } catch (e) {
+          console.warn(`[VFX] Yuklenemedi: ${vPath}`, e);
+          state.vfxFrames[vKey] = [];
+        }
       }
 
       populateInitialReels();

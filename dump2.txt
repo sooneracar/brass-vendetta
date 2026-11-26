@@ -1,0 +1,299 @@
+328:   function drawBoardFrame() {
+329:     const frame = new PIXI.Container();
+330:     const outer = new PIXI.Graphics();
+331:     outer.roundRect(BOARD_X - 18, BOARD_Y - 18, BOARD_W + 36, BOARD_H + 36, 20)
+332:       .fill({ color: 0x090e17, alpha: 0.62 })
+333:       .stroke({ width: 5.5, color: 0x8f621b, alpha: 1 });
+334:     outer.roundRect(BOARD_X - 14, BOARD_Y - 14, BOARD_W + 28, BOARD_H + 28, 16)
+335:       .stroke({ width: 2, color: 0xf6d379, alpha: 0.92 });
+336:     outer.roundRect(BOARD_X - 4, BOARD_Y - 4, BOARD_W + 8, BOARD_H + 8, 10)
+337:       .fill({ color: 0x050912, alpha: 0.42 })
+338:       .stroke({ width: 1.5, color: 0x5c3c11, alpha: 0.95 });
+339:     frame.addChild(outer);
+340: 
+341:     const dividers = new PIXI.Graphics();
+342:     for (let c = 1; c < COLS; c++) {
+343:       const x = BOARD_X + c * CELL_W;
+344:       dividers.moveTo(x, BOARD_Y + 4).lineTo(x, BOARD_Y + BOARD_H - 4)
+345:         .stroke({ width: 2, color: 0xc89336, alpha: 0.3 });
+346:     }
+347:     frame.addChild(dividers);
+348: 
+349:     const rivets = new PIXI.Graphics();
+350:     [
+351:       [BOARD_X - 9, BOARD_Y - 9], [BOARD_X + BOARD_W + 9, BOARD_Y - 9],
+352:       [BOARD_X - 9, BOARD_Y + BOARD_H + 9], [BOARD_X + BOARD_W + 9, BOARD_Y + BOARD_H + 9],
+353:       [BOARD_X + BOARD_W / 2, BOARD_Y - 11], [BOARD_X + BOARD_W / 2, BOARD_Y + BOARD_H + 11],
+354:       [BOARD_X - 11, BOARD_Y + BOARD_H / 2], [BOARD_X + BOARD_W + 11, BOARD_Y + BOARD_H / 2]
+355:     ].forEach(([x, y]) => {
+356:       rivets.circle(x, y, 5.5).fill({ color: 0xdba442 }).stroke({ width: 1.5, color: 0x4a2c08 });
+357:       rivets.circle(x - 1.5, y - 1.5, 1.8).fill({ color: 0xfff3c4, alpha: 0.9 });
+358:     });
+359:     frame.addChild(rivets);
+360:     root.addChild(frame);
+361:   }
+362:   drawBoardFrame();
+363: 
+364:   // KATMAN SIRALAMASI (Ödeme çizgileri VS çarpanının ARKASINDAN geçer!)
+365:   const reelsClip = new PIXI.Container();
+366:   reelsClip.position.set(BOARD_X, BOARD_Y);
+367:   const clipMask = new PIXI.Graphics();
+368:   clipMask.rect(BOARD_X, BOARD_Y, BOARD_W, BOARD_H).fill({ color: 0xffffff });
+369:   root.addChild(clipMask);
+370:   reelsClip.mask = clipMask;
+371:   root.addChild(reelsClip);
+372: 
+373:   const teaseLayer = new PIXI.Container();
+374:   teaseLayer.position.set(BOARD_X, BOARD_Y);
+375:   root.addChild(teaseLayer);
+376: 
+377:   const vsBannerLayer = new PIXI.Container();
+378:   vsBannerLayer.position.set(BOARD_X, BOARD_Y);
+379:   root.addChild(vsBannerLayer);
+380: 
+381:   const winFrameLayer = new PIXI.Container();
+382:   winFrameLayer.position.set(BOARD_X, BOARD_Y);
+383:   root.addChild(winFrameLayer);
+384: 
+385:   const lineLayer = new PIXI.Container();
+405:   // --- OYMALI TAŞ KARO + SEMBOL HÜCRESİ ---
+406:   function createSlot() {
+407:     const box = new PIXI.Container();
+408: 
+409:     const tile = new PIXI.Sprite(state.textures.tile_bg || PIXI.Texture.EMPTY);
+410:     tile.anchor.set(0.5);
+411:     tile.width = CELL_W - 8;
+412:     tile.height = CELL_H - 8;
+413:     tile.alpha = 0.94;
+414:     box.addChild(tile);
+415: 
+416:     const aura = new PIXI.Graphics();
+417:     box.addChild(aura);
+418: 
+419:     const sp = new PIXI.Sprite();
+420:     sp.anchor.set(0.5);
+421:     box.addChild(sp);
+422: 
+423:     const vsGroup = new PIXI.Container();
+424:     vsGroup.visible = false;
+425: 
+426:     const vsRing = new PIXI.Graphics();
+427:     vsRing.arc(0, 0, 52, -Math.PI * 0.85, -Math.PI * 0.1)
+428:       .stroke({ width: 4, color: 0x49d6ff, alpha: 0.94, cap: 'round' });
+429:     vsRing.arc(0, 0, 52, Math.PI * 0.15, Math.PI * 0.9)
+430:       .stroke({ width: 4, color: 0xff6a1a, alpha: 0.94, cap: 'round' });
+431:     vsGroup.addChild(vsRing);
+432: 
+433:     const vsPlate = new PIXI.Graphics();
+434:     vsPlate.roundRect(-32, 22, 64, 28, 7)
+435:       .fill({ color: 0x160c05, alpha: 0.92 })
+436:       .stroke({ width: 2, color: 0xfff1bf, alpha: 1 });
+437:     vsGroup.addChild(vsPlate);
+438: 
+439:     const vsText = new PIXI.Text({
+440:       text: 'VS',
+441:       style: { fontFamily: 'Cinzel', fontSize: 20, fontWeight: '900', fill: 0xfff2c2, letterSpacing: 2, stroke: { color: 0x993506, width: 4 } }
+442:     });
+443:     vsText.anchor.set(0.5);
+444:     vsText.position.set(0, 36);
+445:     vsGroup.addChild(vsText);
+446: 
+447:     box.addChild(vsGroup);
+448:     return { box, tile, aura, sp, vsGroup, vsRing, symKey: 'L1', baseScale: 1 };
+449:   }
+450: 
+451:   function fitSlot(slot, symKey) {
+452:     slot.symKey = symKey;
+453:     const style = SYMBOL_STYLE[symKey] || SYMBOL_STYLE.L1;
+454:     const tex = state.textures[symKey];
+455: 
+456:     if (state.textures.tile_bg) {
+457:       slot.tile.texture = state.textures.tile_bg;
+458:       slot.tile.width = CELL_W - 8;
+459:       slot.tile.height = CELL_H - 8;
+460:     }
+461: 
+462:     slot.sp.texture = tex || PIXI.Texture.EMPTY;
+463:     const w = tex && tex.width ? tex.width : 512;
+464:     const h = tex && tex.height ? tex.height : 512;
+465:     const factor = symKey.startsWith('L') ? 0.72 : 0.78;
+466:     const scale = Math.min((CELL_W * factor) / w, (CELL_H * factor) / h);
+467:     slot.sp.scale.set(scale);
+468:     slot.baseScale = scale;
+469:     slot.box.alpha = 1;
+470:     slot.box.scale.set(1);
+471: 
+472:     slot.aura.clear();
+473:     if (style.aura) {
+474:       if (symKey === 'VS') {
+475:         slot.aura.circle(-12, -6, 38).fill({ color: 0x49d6ff, alpha: 0.25 });
+476:         slot.aura.circle(12, 6, 38).fill({ color: 0xff6a1a, alpha: 0.25 });
+477:       } else {
+478:         slot.aura.circle(0, 0, 46).fill({ color: style.aura, alpha: style.alpha });
+479:       }
+480:     }
+481:     slot.vsGroup.visible = (symKey === 'VS');
+482:   }
+483: 
+484:   const reels = [];
+485:   for (let c = 0; c < COLS; c++) {
+486:     const colContainer = new PIXI.Container();
+487:     colContainer.x = c * CELL_W;
+488:     reelsClip.addChild(colContainer);
+489:     reels.push({ col: c, container: colContainer, slots: [], dropping: false });
+490:   }
+491: 
+492:   function refreshVSRings() {
+493:     state.vsEnergyRings = reels.flatMap(r => r.slots.map(s => s.vsRing));
+494:   }
+495: 
+710:     for (let i = state.steamPuffs.length - 1; i >= 0; i--) {
+711:       const st = state.steamPuffs[i];
+712:       st.gfx.x += st.vx * dt;
+713:       st.gfx.y += st.vy * dt;
+714:       st.scale += 0.03 * dt;
+715:       st.gfx.scale.set(st.scale);
+716:       st.life -= 0.018 * dt;
+717:       st.gfx.alpha = Math.max(0, st.life * 0.5);
+718:       if (st.life <= 0) { steamLayer.removeChild(st.gfx); st.gfx.destroy(); state.steamPuffs.splice(i, 1); }
+719:     }
+720: 
+721:     for (let i = state.rings.length - 1; i >= 0; i--) {
+722:       const rg = state.rings[i];
+723:       rg.r += (rg.maxR - rg.r) * 0.16 * dt;
+724:       rg.life -= 0.045 * dt;
+725:       rg.gfx.clear();
+726:       if (rg.life > 0) rg.gfx.circle(0, 0, rg.r).stroke({ width: 6 * rg.life, color: rg.color, alpha: rg.life });
+727:       else { fxLayer.removeChild(rg.gfx); rg.gfx.destroy(); state.rings.splice(i, 1); }
+728:     }
+729: 
+730:     for (let i = state.particles.length - 1; i >= 0; i--) {
+731:       const p = state.particles[i];
+732:       p.vx *= 0.982;
+733:       p.vy += p.gravity * dt;
+734:       p.gfx.x += p.vx * dt;
+735:       p.gfx.y += p.vy * dt;
+736:       p.gfx.rotation += (p.vr || 0) * dt;
+737:       p.life -= p.decay * dt;
+738:       p.gfx.alpha = Math.max(0, p.life);
+739:       if (p.life <= 0) { fxLayer.removeChild(p.gfx); p.gfx.destroy(); state.particles.splice(i, 1); }
+740:     }
+741: 
+742:     for (let i = state.floatingTexts.length - 1; i >= 0; i--) {
+743:       const ft = state.floatingTexts[i];
+744:       ft.txt.y += ft.vy * dt;
+745:       const targetScale = ft.life > 0.78 ? 1.1 : 1.0;
+746:       ft.txt.scale.x += (targetScale - ft.txt.scale.x) * 0.2 * dt;
+747:       ft.txt.scale.y = ft.txt.scale.x;
+748:       ft.life -= 0.016 * dt;
+749:       ft.txt.alpha = Math.min(1, ft.life * 2.2);
+750:       if (ft.life <= 0) { fxLayer.removeChild(ft.txt); ft.txt.destroy(); state.floatingTexts.splice(i, 1); }
+751:     }
+752: 
+753:     if (state.inBonus && Math.random() < 0.28) {
+754:       const g = new PIXI.Graphics();
+755:       g.circle(0, 0, 1.8 + Math.random() * 2.5).fill({ color: Math.random() < 0.55 ? 0xff7b29 : 0xfff1bf });
+756:       g.position.set(Math.random() * STAGE_W, STAGE_H + 6);
+757:       fxLayer.addChild(g);
+758:       state.particles.push({ gfx: g, vx: (Math.random() - 0.5) * 1.4, vy: -(1.7 + Math.random() * 2.5), vr: 0, gravity: -0.012, life: 0.95, decay: 0.008 });
+759:     }
+760:   });
+761: 
+762:   function clearRoundVisuals() {
+763:     state.cycleToken++;
+764:     teaseLayer.removeChildren();
+765:     vsBannerLayer.removeChildren();
+766:     vsForegroundLayer.removeChildren();
+767:     winFrameLayer.removeChildren();
+768:     lineLayer.removeChildren();
+769:     lineBadgeLayer.removeChildren();
+770:     state.activeVsColumns = [];
+771:     state.winningSlots = [];
+772:     state.targetZoom = 1.0;
+773:     $('win-banner').classList.add('hidden');
+774:     $('vs-total-banner').classList.add('hidden');
+775:     $('retrigger-banner').classList.add('hidden');
+776:     reels.forEach(r => r.slots.forEach((slot) => {
+777:       slot.box.alpha = 1;
+778:       slot.box.scale.set(1);
+779:     }));
+780:   }
+781: 
+782:   function showTeaseColumn(col) {
+783:     teaseLayer.removeChildren();
+784:     const g = new PIXI.Graphics();
+785:     g.roundRect(col * CELL_W + 2, 2, CELL_W - 4, BOARD_H - 4, 12)
+786:       .fill({ color: 0xff5a12, alpha: 0.22 })
+787:       .stroke({ width: 6, color: 0xff9a2e, alpha: 0.95 });
+788:     g.roundRect(col * CELL_W + 8, 8, CELL_W - 16, BOARD_H - 16, 8)
+789:       .stroke({ width: 2.5, color: 0xfff2c2, alpha: 0.85 });
+790:     teaseLayer.addChild(g);
+791:     state.targetZoom = 1.036;
+792:     spawnBurst(BOARD_X + col * CELL_W + CELL_W / 2, BOARD_Y + BOARD_H - 14, 18, [0xff6a1a, 0xfff1bf]);
+793:   }
+794: 
+795:   // --- FORMÜL A: SIKI DALGA DÜŞÜŞÜ (TAHTA ASLA BOŞ KALMAZ, ~0.85 SN TOK RİTİM) ---
+796:   async function animateColumnWave(col, grid, scBefore, teaseHoldMs = 0) {
+797:     const reel = reels[col];
+798:     reel.dropping = true;
+799: 
+800:     const oldSlots = [...reel.slots];
+801:     const oldStartYs = oldSlots.map(s => s.box.y);
+802: 
+803:     // 1. Eski semboller aşağı akarken, yeni semboller hemen peşinden iner
+804:     const exitDur = state.turbo || state.quickStop ? 110 : 175;
+805:     const exitPromise = new Promise((resolve) => {
+806:       if (!oldSlots.length) return resolve();
+807:       let elapsed = 0;
+808:       let last = performance.now();
+809:       function tick(now) {
+810:         if (!state.paused) elapsed += Math.min(80, now - last);
+811:         last = now;
+812:         const p = Math.min(1, elapsed / exitDur);
+813:         const easeIn = p * p * 1.12;
+814:         oldSlots.forEach((slot, r) => {
+815:           slot.box.y = oldStartYs[r] + easeIn * (BOARD_H + CELL_H * 0.9);
+816:           slot.box.alpha = Math.max(0.15, 1 - p * 0.85);
+817:         });
+818:         if (p >= 1) {
+819:           oldSlots.forEach(s => {
+820:             if (s.box.parent) s.box.parent.removeChild(s.box);
+821:             s.box.destroy({ children: true });
+822:           });
+823:           return resolve();
+824:         }
+825:         requestAnimationFrame(tick);
+826:       }
+827:       requestAnimationFrame(tick);
+828:     });
+829: 
+830:     if (teaseHoldMs > 0) {
+831:       await exitPromise;
+832:       let waited = 0;
+833:       while (!state.quickStop && waited < teaseHoldMs) {
+834:         await gameSleep(35);
+835:         waited += 35;
+836:       }
+837:     } else {
+838:       // Sıkı örtüşme: eski sütun daha yarısına gelmeden yeni sütun üstten girer
+839:       await gameSleep(state.turbo || state.quickStop ? 28 : 52);
+840:     }
+841: 
+842:     let colHasSC = false;
+843:     let colHasVS = false;
+844:     let scRow = 1;
+845:     let vsRow = 1;
+846:     const newSlots = [];
+847:     const targetYs = [];
+848:     const startYs = [];
+HTML 26: <span id="buy-bonus-price" class="plaque-price">$100.00</span>
+HTML 95: <svg class="spin-gear" viewBox="0 0 100 100">
+HTML 117: <button class="auto-opt" data-spins="100">100</button>
+HTML 169: <p>Expanding Wild Reels with multipliers up to <strong>100�</strong></p>
+HTML 216: <div><strong>VS DUEL</strong><p>Expands across its entire reel as a Wild reel. Two fighters duel for a multiplier (2ז100�) applied to all wins passing through the reel. Multiple VS multipliers add together.</p></div>
+HTML 234: <div class="ug-item"><strong>BUY BONUS / FEATURE</strong><p>Opens the feature purchase panel to immediately trigger 10 Furnace Free Spins via a 3-Scatter drop (100� stake).</p></div>
+HTML 235: <div class="ug-item"><strong>AUTOPLAY</strong><p>Automatically plays 10, 25, 50, or 100 consecutive rounds. Stops automatically on Bonus Trigger or manual click.</p></div>
+HTML 256: <p class="modal-desc">Guarantees a <strong>3-Scatter</strong> trigger for <strong>10 Free Spins</strong> with boosted VS Duel reels, Retriggers, and up to 100� multipliers.</p>
+HTML 268: <span id="buy-modal-cost-label">TOTAL COST (100� BET)</span>
+HTML 269: <strong id="buy-modal-cost">$100.00</strong>
+HTML 287: <p class="modal-desc">Boosted VS Reels � Retriggers Active � Multipliers up to 100�</p>

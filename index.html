@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>BRASS VENDETTA — TessynLabs</title>
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=3" />
   <script src="lib/pixi.min.js"></script>
 </head>
 <body>
@@ -151,12 +151,25 @@
     <span class="intro-skip-hint">TAP TO SKIP</span>
   </section>
 
-  <!-- 1. ÇERÇEVESİZ TAM EKRAN SPLASH (EN BAŞTAN JENERİK ALTINDA HAZIR — SIFIR SIÇRAMA!) -->
+  <!-- 1. SİNEMATİK TAM EKRAN SPLASH (HAREKETLİ ARKA PLAN + CANLI KIVILCIM) -->
   <section id="splash-screen">
     <div class="splash-bg"></div>
+    <video id="splash-video" class="splash-video" src="assets/splash_loop.mp4" poster="assets/img/splash_bg.png" autoplay loop muted playsinline preload="auto"></video>
     <div class="splash-scrim"></div>
+    <canvas id="splash-fx-canvas" aria-hidden="true"></canvas>
+
+    <div class="splash-frame" aria-hidden="true">
+      <span class="sf-corner sf-tl"></span>
+      <span class="sf-corner sf-tr"></span>
+      <span class="sf-corner sf-bl"></span>
+      <span class="sf-corner sf-br"></span>
+    </div>
+
     <div class="splash-content">
-      <img class="splash-logo" src="assets/img/logo.png" alt="Brass Vendetta" />
+      <div class="splash-hero">
+        <div class="splash-eyebrow">TESSYNLABS &bull; FORGE EDITION</div>
+        <img class="splash-logo" src="assets/img/logo.png" alt="Brass Vendetta" />
+      </div>
 
       <div class="splash-highlights">
         <div class="hl-item">
@@ -169,7 +182,6 @@
             <p>Expanding Wild Reels with multipliers up to <strong>100×</strong></p>
           </div>
         </div>
-        <div class="hl-sep"></div>
         <div class="hl-item">
           <div class="hl-icon">
             <img src="assets/img/SC.png" alt="Free Spins" />
@@ -181,14 +193,146 @@
         </div>
       </div>
 
-      <div id="load-wrap">
-        <div class="load-track"><div id="load-fill"></div></div>
-        <span id="load-text">LOADING FORGE 0%</span>
-      </div>
+      <div class="splash-footer">
+        <div id="load-wrap">
+          <div class="load-track"><div id="load-fill"></div></div>
+          <span id="load-text">LOADING FORGE 0%</span>
+        </div>
 
-      <button id="btn-splash-play" class="press-continue hidden" type="button">PRESS TO CONTINUE!</button>
+        <button id="btn-splash-play" class="press-continue hidden" type="button">PRESS TO CONTINUE!</button>
+      </div>
     </div>
   </section>
+
+  <!-- SPLASH CANLI KIVILCIM & VİDEO YÖNETİCİSİ -->
+  <script>
+    (function initSplashAtmosphere() {
+      const splash = document.getElementById('splash-screen');
+      const canvas = document.getElementById('splash-fx-canvas');
+      const video = document.getElementById('splash-video');
+      if (!splash || !canvas) return;
+
+      if (video) {
+        video.muted = true;
+        const tryPlay = () => video.play().catch(() => {});
+        tryPlay();
+        window.addEventListener('pointerdown', tryPlay, { once: true });
+      }
+
+      const ctx = canvas.getContext('2d');
+      let w = 0, h = 0, dpr = 1, rafId = 0, running = true;
+      const sparks = [];
+
+      function resize() {
+        dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+        w = splash.clientWidth || window.innerWidth;
+        h = splash.clientHeight || window.innerHeight;
+        canvas.width = Math.max(1, Math.floor(w * dpr));
+        canvas.height = Math.max(1, Math.floor(h * dpr));
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+
+      function spawnSpark(randomY) {
+        const isBig = Math.random() < 0.24;
+        const x = Math.random() * w;
+        const y = randomY ? Math.random() * h : h + 8 + Math.random() * 48;
+        const life = 2.2 + Math.random() * 3.4;
+        return {
+          x, y,
+          vx: (Math.random() - 0.5) * 26,
+          vy: -(38 + Math.random() * (isBig ? 74 : 52)),
+          r: isBig ? (2.1 + Math.random() * 2.1) : (0.9 + Math.random() * 1.4),
+          age: randomY ? Math.random() * life : 0,
+          life,
+          sway: 12 + Math.random() * 28,
+          freq: 1.4 + Math.random() * 2.2,
+          phase: Math.random() * Math.PI * 2,
+          hue: 22 + Math.random() * 26
+        };
+      }
+
+      function populate() {
+        sparks.length = 0;
+        const count = w < 640 ? 34 : 62;
+        for (let i = 0; i < count; i++) sparks.push(spawnSpark(true));
+      }
+
+      let lastT = performance.now();
+      function tick(now) {
+        if (!running) return;
+        const dt = Math.min(0.05, (now - lastT) / 1000);
+        lastT = now;
+
+        ctx.clearRect(0, 0, w, h);
+        ctx.globalCompositeOperation = 'lighter';
+
+        for (let i = 0; i < sparks.length; i++) {
+          const p = sparks[i];
+          p.age += dt;
+          if (p.age >= p.life || p.y < -20) {
+            sparks[i] = spawnSpark(false);
+            continue;
+          }
+          const t = p.age / p.life;
+          const alpha = t < 0.14 ? (t / 0.14) : (1 - Math.pow((t - 0.14) / 0.86, 1.45));
+          const drift = Math.sin(p.age * p.freq + p.phase) * p.sway;
+          const prevX = p.x;
+          const prevY = p.y;
+          p.x += (p.vx + drift) * dt;
+          p.y += p.vy * dt;
+
+          ctx.beginPath();
+          ctx.moveTo(prevX, prevY);
+          ctx.lineTo(p.x, p.y);
+          ctx.strokeStyle = `hsla(${p.hue}, 100%, 62%, ${alpha * 0.55})`;
+          ctx.lineWidth = Math.max(0.8, p.r * 0.7);
+          ctx.lineCap = 'round';
+          ctx.stroke();
+
+          const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r * 3.4);
+          grad.addColorStop(0, `hsla(${p.hue + 14}, 100%, 92%, ${alpha * 0.95})`);
+          grad.addColorStop(0.35, `hsla(${p.hue}, 100%, 58%, ${alpha * 0.65})`);
+          grad.addColorStop(1, `hsla(${p.hue - 8}, 100%, 40%, 0)`);
+          ctx.fillStyle = grad;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r * 3.4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.globalCompositeOperation = 'source-over';
+        rafId = requestAnimationFrame(tick);
+      }
+
+      function stopAll() {
+        running = false;
+        if (rafId) cancelAnimationFrame(rafId);
+        if (video) { try { video.pause(); } catch (_) {} }
+      }
+
+      const obs = new MutationObserver(() => {
+        if (splash.classList.contains('hidden')) stopAll();
+      });
+      obs.observe(splash, { attributes: true, attributeFilter: ['class'] });
+
+      document.addEventListener('visibilitychange', () => {
+        if (splash.classList.contains('hidden')) return;
+        if (document.hidden) {
+          running = false;
+          if (rafId) cancelAnimationFrame(rafId);
+          if (video) { try { video.pause(); } catch (_) {} }
+        } else {
+          running = true;
+          lastT = performance.now();
+          if (video) video.play().catch(() => {});
+          rafId = requestAnimationFrame(tick);
+        }
+      });
+
+      window.addEventListener('resize', () => { if (running) { resize(); populate(); } });
+      resize();
+      populate();
+      rafId = requestAnimationFrame(tick);
+    })();
+  </script>
 
   <!-- 3. KURALLAR, ÖDEME TABLOSU & ZORUNLU UI REHBERİ -->
   <div id="info-modal" class="modal-backdrop hidden">
@@ -284,7 +428,7 @@
       <div class="dramatic-eyebrow">FURNACE OVERLOAD</div>
       <h2 class="dramatic-title">FREE SPINS WON</h2>
       <div class="dramatic-number">10</div>
-      <p class="modal-desc">Boosted VS Reels • Retriggers Active • Multipliers up to 100×</p>
+      <p class="modal-desc" style="font-size:0.9em;">Boosted VS Reels &bull; Retriggers &bull; Up&nbsp;to&nbsp;<strong>100&times;</strong></p>
       <button id="btn-start-fs" class="cta-btn" type="button">START FREE SPINS</button>
     </div>
   </div>

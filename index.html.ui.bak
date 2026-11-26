@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>BRASS VENDETTA — TessynLabs</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="lib/pixi.min.js"></script>
+</head>
+<body>
+  <!-- ARKA PLAN KATMANLARI -->
+  <div id="bg-layer">
+    <div id="bg-base" class="bg-img active"></div>
+    <div id="bg-bonus" class="bg-img"></div>
+    <div class="bg-vignette"></div>
+  </div>
+
+  <!-- ANA OYUN KABUĞU -->
+  <div id="game-shell">
+    <div id="workspace">
+      <!-- DİKEYDE ÜST BAR / YATAY & MASAÜSTÜNDE SOL PİRİNÇ PANEL -->
+      <aside id="side-panel">
+        <button id="btn-buy-bonus" class="brass-plaque" type="button">
+          <span id="buy-bonus-tag" class="plaque-tag">FEATURE</span>
+          <span id="buy-bonus-title" class="plaque-title">BUY BONUS</span>
+          <span id="buy-bonus-price" class="plaque-price">$100.00</span>
+        </button>
+
+        <div id="brand-wrap">
+          <img id="game-logo" src="assets/img/logo.png" alt="Brass Vendetta" />
+          <div id="bonus-hud" class="hidden">
+            <div class="hud-pill">
+              <span class="hud-label">FREE SPINS</span>
+              <span id="hud-spins" class="hud-val">10 / 10</span>
+            </div>
+            <div class="hud-pill hud-pill-gold">
+              <span class="hud-label">TOTAL WIN</span>
+              <span id="hud-total-win" class="hud-val">$0.00</span>
+            </div>
+          </div>
+        </div>
+
+        <div id="top-right-badges">
+          <span id="mode-badge" class="mode-badge hidden">DEMO</span>
+          <span id="replay-badge" class="mode-badge replay-badge hidden">REPLAY</span>
+          <div class="side-maxwin">
+            <span>MAX WIN</span>
+            <strong>12,500×</strong>
+          </div>
+        </div>
+      </aside>
+
+      <!-- PIXIJS V8 SAHNE -->
+      <main id="stage-wrap">
+        <div id="pixi-container"></div>
+        <div id="win-banner" class="hidden">
+          <span class="win-banner-label">WIN</span>
+          <span id="win-banner-amount">$0.00</span>
+        </div>
+        <div id="vs-total-banner" class="hidden">
+          <span class="vs-total-eyebrow">COMBINED MULTIPLIER</span>
+          <strong id="vs-total-text">14×</strong>
+        </div>
+        <div id="retrigger-banner" class="hidden">
+          <span class="retrigger-eyebrow">RETRIGGER!</span>
+          <strong id="retrigger-text">+2 FREE SPINS</strong>
+        </div>
+        <!-- REPLAY BİTİŞ BAR (ZORUNLU PLAY AGAIN) -->
+        <div id="replay-again-bar" class="hidden">
+          <span class="replay-done-tag">REPLAY COMPLETE</span>
+          <button id="btn-replay-again" class="cta-btn" type="button">PLAY AGAIN</button>
+        </div>
+      </main>
+    </div>
+
+    <!-- FERAH ALT KONTROL BARI -->
+    <footer id="bottom-bar">
+      <div class="bar-controls">
+        <div class="bar-left">
+          <button id="btn-info" class="icon-btn" title="Paytable & Rules" aria-label="Info">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" stroke-width="2"/><line x1="12" y1="10" x2="12" y2="17" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><circle cx="12" cy="6.8" r="1.3" fill="currentColor"/></svg>
+          </button>
+          <button id="btn-sound" class="icon-btn active" title="Toggle Sound" aria-label="Sound">
+            <svg id="ico-sound-on" viewBox="0 0 24 24"><path d="M11 5L6 9H2v6h4l5 4V5z" fill="currentColor"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            <svg id="ico-sound-off" class="hidden" viewBox="0 0 24 24"><path d="M11 5L6 9H2v6h4l5 4V5z" fill="currentColor"/><line x1="16" y1="9" x2="22" y2="15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><line x1="22" y1="9" x2="16" y2="15" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
+          </button>
+          <button id="btn-turbo" class="icon-btn" title="Turbo Spin" aria-label="Turbo">
+            <svg viewBox="0 0 24 24"><polygon points="13 2 3 14 11 14 10 22 21 10 13 10 13 2" fill="currentColor"/></svg>
+          </button>
+        </div>
+
+        <div class="bar-center-spin">
+          <button id="btn-bet-down" class="round-step" type="button" aria-label="Decrease Bet">−</button>
+          <button id="btn-spin" class="spin-btn" type="button" aria-label="Spin">
+            <svg class="spin-gear" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="44" fill="none" stroke="currentColor" stroke-width="3" stroke-dasharray="10 6" opacity="0.65"/>
+              <path id="spin-arrow" d="M50 22 A28 28 0 1 1 25 63" fill="none" stroke="currentColor" stroke-width="6.5" stroke-linecap="round"/>
+              <polygon id="spin-arrow-head" points="48,12 63,22 48,32" fill="currentColor"/>
+              <rect id="spin-stop-icon" class="hidden" x="34" y="34" width="32" height="32" rx="4" fill="currentColor"/>
+            </svg>
+          </button>
+          <button id="btn-bet-up" class="round-step" type="button" aria-label="Increase Bet">+</button>
+        </div>
+
+        <div class="bar-right">
+          <div class="autoplay-wrap">
+            <button id="btn-auto" class="icon-btn auto-btn" title="Autoplay" aria-label="Autoplay">
+              <svg viewBox="0 0 24 24"><path d="M17 2l4 4-4 4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 11V9a4 4 0 0 1 4-4h14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M7 22l-4-4 4-4" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M21 13v2a4 4 0 0 1-4 4H3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              <span id="auto-count" class="hidden">0</span>
+            </button>
+            <div id="auto-popover" class="hidden">
+              <div class="popover-title">AUTOPLAY SPINS</div>
+              <div class="popover-grid">
+                <button class="auto-opt" data-spins="10">10</button>
+                <button class="auto-opt" data-spins="25">25</button>
+                <button class="auto-opt" data-spins="50">50</button>
+                <button class="auto-opt" data-spins="100">100</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- İNCE TEK ŞERİT BAKİYE / KAZANÇ / BAHİS -->
+      <div class="bar-strip">
+        <div id="strip-balance-wrap" class="strip-item">
+          <span class="strip-label">BALANCE</span>
+          <strong id="ui-balance" class="strip-val">$1,000.00</strong>
+        </div>
+        <div id="strip-div-1" class="strip-divider"></div>
+        <div class="strip-item strip-win">
+          <span class="strip-label">WIN</span>
+          <strong id="ui-win" class="strip-val">$0.00</strong>
+        </div>
+        <div class="strip-divider"></div>
+        <div class="strip-item">
+          <span id="lbl-bet" class="strip-label">BET</span>
+          <strong id="ui-bet" class="strip-val">$1.00</strong>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <!-- 0. TESSYNLABS STÜDYO AÇILIŞ JENERİĞİ (EN ÜST KATMAN) -->
+  <section id="studio-intro">
+    <video id="studio-video" src="assets/studio_intro.mp4" playsinline muted preload="auto"></video>
+    <div id="studio-fallback" class="hidden">
+      <div class="studio-mark">TESSYNLABS</div>
+      <div class="studio-sub">STUDIOS</div>
+    </div>
+    <span class="intro-skip-hint">TAP TO SKIP</span>
+  </section>
+
+  <!-- 1. ÇERÇEVESİZ TAM EKRAN SPLASH (EN BAŞTAN JENERİK ALTINDA HAZIR — SIFIR SIÇRAMA!) -->
+  <section id="splash-screen">
+    <div class="splash-bg"></div>
+    <div class="splash-scrim"></div>
+    <div class="splash-content">
+      <img class="splash-logo" src="assets/img/logo.png" alt="Brass Vendetta" />
+
+      <div class="splash-highlights">
+        <div class="hl-item">
+          <div class="hl-icon">
+            <img src="assets/img/VS.png" alt="VS Duel" />
+            <span class="hl-vs-tag">VS</span>
+          </div>
+          <div class="hl-text">
+            <h3>VS DUEL REELS</h3>
+            <p>Expanding Wild Reels with multipliers up to <strong>100×</strong></p>
+          </div>
+        </div>
+        <div class="hl-sep"></div>
+        <div class="hl-item">
+          <div class="hl-icon">
+            <img src="assets/img/SC.png" alt="Free Spins" />
+          </div>
+          <div class="hl-text">
+            <h3>FURNACE FREE SPINS</h3>
+            <p><strong>10 Spins</strong> + Retriggers &amp; <strong>12,500×</strong> Max Win</p>
+          </div>
+        </div>
+      </div>
+
+      <div id="load-wrap">
+        <div class="load-track"><div id="load-fill"></div></div>
+        <span id="load-text">LOADING FORGE 0%</span>
+      </div>
+
+      <button id="btn-splash-play" class="press-continue hidden" type="button">PRESS TO CONTINUE!</button>
+    </div>
+  </section>
+
+  <!-- 3. KURALLAR, ÖDEME TABLOSU & ZORUNLU UI REHBERİ -->
+  <div id="info-modal" class="modal-backdrop hidden">
+    <div class="modal-box modal-large">
+      <div class="modal-header">
+        <h2>PAYTABLE, RULES &amp; UI GUIDE</h2>
+        <button class="modal-close" data-close="info-modal" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="info-stats">
+          <div><span>GRID</span><strong>5×4</strong></div>
+          <div><span>PAYLINES</span><strong>14</strong></div>
+          <div><span>RTP</span><strong>96.30%</strong></div>
+          <div><span>MAX WIN</span><strong>12,500×</strong></div>
+        </div>
+
+        <h3 class="sec-title">SPECIAL SYMBOLS</h3>
+        <div class="special-grid">
+          <div class="sp-item">
+            <img src="assets/img/W.png" alt="Wild" />
+            <div><strong>WILD</strong><p>Substitutes for all symbols except Scatter &amp; VS. Pays 3×: 1.2× • 4×: 4.0× • 5×: 15.0×</p></div>
+          </div>
+          <div class="sp-item">
+            <img src="assets/img/VS.png" alt="VS" />
+            <div><strong>VS DUEL</strong><p>Expands across its entire reel as a Wild reel. Two fighters duel for a multiplier (2×–100×) applied to all wins passing through the reel. Multiple VS multipliers add together.</p></div>
+          </div>
+          <div class="sp-item">
+            <img src="assets/img/SC.png" alt="Scatter" />
+            <div><strong>SCATTER &amp; RETRIGGER</strong><p>3+ Scatters trigger 10 Furnace Free Spins with boosted VS Duel frequency. During Free Spins: 2 Scatters award <strong>+2 Extra Spins</strong>, 3+ Scatters award <strong>+5 Extra Spins</strong> (up to 40 total spins).</p></div>
+          </div>
+        </div>
+
+        <h3 class="sec-title">SYMBOL PAYOUTS (MULTIPLIER OF PLAY)</h3>
+        <div id="paytable-grid" class="paytable-grid"></div>
+
+        <h3 class="sec-title">14 FIXED PAYLINES</h3>
+        <div id="paylines-grid" class="paylines-grid"></div>
+
+        <h3 class="sec-title">INTERFACE &amp; CONTROLS GUIDE</h3>
+        <div class="ui-guide-grid">
+          <div class="ug-item"><strong>SPIN / SPACEBAR</strong><p>Starts a new round. Tap the spin button, board, or press Space during reels or count-up to quick-stop and skip.</p></div>
+          <div class="ug-item"><strong>BET / PLAY (− / +)</strong><p>Decreases or increases your stake per round within the operator's allowed bet levels.</p></div>
+          <div class="ug-item"><strong>BUY BONUS / FEATURE</strong><p>Opens the feature purchase panel to immediately trigger 10 Furnace Free Spins via a 3-Scatter drop (100× stake).</p></div>
+          <div class="ug-item"><strong>AUTOPLAY</strong><p>Automatically plays 10, 25, 50, or 100 consecutive rounds. Stops automatically on Bonus Trigger or manual click.</p></div>
+          <div class="ug-item"><strong>TURBO (BOLT)</strong><p>Toggles high-speed reel drops and shortened win transitions.</p></div>
+          <div class="ug-item"><strong>AUDIO &amp; INFO (i)</strong><p>Toggles music/SFX mute and opens this paytable, rules, and controls guide.</p></div>
+        </div>
+
+        <p class="legal-note">All wins pay left to right on adjacent reels starting from reel 1. Only the highest win per payline is paid. Maximum win is capped at 12,500× stake; reaching the cap immediately concludes the round. Unfinished bonus rounds are automatically recovered on reconnect. Malfunction voids all pays and plays.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. AAA BUY BONUS MODALI -->
+  <div id="buy-modal" class="modal-backdrop hidden">
+    <div class="modal-box modal-compact modal-forged">
+      <div class="modal-header">
+        <h2 id="buy-modal-title">BUY FURNACE FREE SPINS</h2>
+        <button class="modal-close" data-close="buy-modal" aria-label="Close">&times;</button>
+      </div>
+      <div class="modal-body center-body">
+        <div class="modal-emblem-ring">
+          <img class="modal-emblem" src="assets/img/SC.png" alt="Scatter" />
+        </div>
+        <p class="modal-desc">Guarantees a <strong>3-Scatter</strong> trigger for <strong>10 Free Spins</strong> with boosted VS Duel reels, Retriggers, and up to 100× multipliers.</p>
+
+        <div class="modal-bet-row">
+          <span id="lbl-modal-bet" class="modal-bet-label">BET SIZE</span>
+          <div class="modal-stepper">
+            <button id="btn-modal-bet-down" class="step-btn step-lg" type="button" aria-label="Decrease Bet">−</button>
+            <strong id="modal-bet-val">$1.00</strong>
+            <button id="btn-modal-bet-up" class="step-btn step-lg" type="button" aria-label="Increase Bet">+</button>
+          </div>
+        </div>
+
+        <div class="buy-cost-box">
+          <span id="buy-modal-cost-label">TOTAL COST (100× BET)</span>
+          <strong id="buy-modal-cost">$100.00</strong>
+          <small id="buy-insufficient" class="buy-warn hidden">INSUFFICIENT BALANCE</small>
+        </div>
+
+        <div class="modal-actions">
+          <button class="cta-btn cta-ghost" data-close="buy-modal" type="button">CANCEL</button>
+          <button id="btn-confirm-buy" class="cta-btn" type="button">BUY BONUS</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. FREE SPIN GİRİŞ EKRANI -->
+  <div id="fs-intro-modal" class="modal-backdrop hidden">
+    <div class="modal-box modal-dramatic">
+      <div class="dramatic-eyebrow">FURNACE OVERLOAD</div>
+      <h2 class="dramatic-title">FREE SPINS WON</h2>
+      <div class="dramatic-number">10</div>
+      <p class="modal-desc">Boosted VS Reels • Retriggers Active • Multipliers up to 100×</p>
+      <button id="btn-start-fs" class="cta-btn" type="button">START FREE SPINS</button>
+    </div>
+  </div>
+
+  <!-- 7. FREE SPIN BİTİŞ ÖZET EKRANI -->
+  <div id="fs-outro-modal" class="modal-backdrop hidden">
+    <div class="modal-box modal-dramatic">
+      <div class="dramatic-eyebrow">BONUS COMPLETE</div>
+      <h2 class="dramatic-title">TOTAL WIN</h2>
+      <div id="fs-outro-amount" class="dramatic-amount">$0.00</div>
+      <p id="fs-outro-mult" class="modal-desc">0.00× BET</p>
+      <button id="btn-end-fs" class="cta-btn" type="button">CONTINUE</button>
+    </div>
+  </div>
+
+  <!-- 8. AAA BIG / MEGA / EPIC / MAX WIN (ÖN KATMAN 3D ALTIN SİKKE YAĞMURU) -->
+  <div id="bigwin-overlay" class="modal-backdrop hidden">
+    <div class="bigwin-rays"></div>
+    <canvas id="bigwin-fx-canvas"></canvas>
+    <div class="bigwin-content">
+      <div id="bigwin-tier" class="bigwin-tier">BIG WIN</div>
+      <div id="bigwin-amount" class="bigwin-amount">$0.00</div>
+      <div id="bigwin-mult" class="bigwin-mult">0×</div>
+      <div class="bigwin-hint">TAP OR PRESS SPACE TO SKIP</div>
+    </div>
+  </div>
+
+  <!-- HATA / UYARI TOAST -->
+  <div id="toast" class="hidden"></div>
+
+  <script src="rgs-adapter.js"></script>
+  <script src="audio.js"></script>
+  <script src="game.js"></script>
+</body>
+</html>
