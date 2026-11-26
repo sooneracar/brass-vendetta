@@ -1,3 +1,33 @@
+/* YEREL FONT TANIMLARI — SIFIR HARİCİ CDN */
+@font-face {
+  font-family: 'Cinzel';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('assets/fonts/cinzel-700.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Cinzel';
+  font-style: normal;
+  font-weight: 900;
+  font-display: swap;
+  src: url('assets/fonts/cinzel-900.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Rajdhani';
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url('assets/fonts/rajdhani-600.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Rajdhani';
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url('assets/fonts/rajdhani-700.woff2') format('woff2');
+}
+
 :root {
   --bg-obsidian: #05080e;
   --brass-bright: #fff1bf;
@@ -10,8 +40,8 @@
   --cyan-cold: #49d6ff;
   --text-main: #f6f1e6;
   --text-muted: #a4b2c9;
-  --font-display: 'Cinzel', Georgia, serif;
-  --font-ui: 'Rajdhani', system-ui, sans-serif;
+  --font-display: 'Cinzel', Georgia, 'Times New Roman', serif;
+  --font-ui: 'Rajdhani', 'Trebuchet MS', system-ui, sans-serif;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; user-select: none; }
@@ -23,6 +53,13 @@ html, body {
 }
 
 .hidden { display: none !important; }
+
+/* REPLAY MODU KURALI: TÜM BAHİS KONTROLLERİ GİZLENİR */
+body.replay-mode #btn-buy-bonus,
+body.replay-mode .bar-center-spin,
+body.replay-mode .bar-right,
+body.replay-mode #strip-balance-wrap,
+body.replay-mode #strip-div-1 { display: none !important; }
 
 /* ARKA PLAN KATMANLARI */
 #bg-layer { position: fixed; inset: 0; z-index: 0; pointer-events: none; }
@@ -92,7 +129,7 @@ body.bonus-active #btn-buy-bonus { display: none; }
 #game-logo { height: 42px; max-width: 184px; object-fit: contain; filter: drop-shadow(0 4px 14px rgba(0,0,0,0.92)); }
 body.bonus-active #game-logo { display: none; }
 
-/* BONUS HUD (TEK SATIRDA FERAH & ÇAKIŞMASIZ) */
+/* BONUS HUD */
 #bonus-hud { display: flex; align-items: center; justify-content: center; gap: 8px; flex-wrap: nowrap; }
 body.bonus-active #side-panel { grid-template-columns: 1fr; justify-items: center; }
 body.bonus-active #top-right-badges { display: none; }
@@ -115,6 +152,10 @@ body.bonus-active #top-right-badges { display: none; }
 .mode-badge {
   font-size: 10px; letter-spacing: 1.6px; font-weight: 700; padding: 4px 9px; border-radius: 6px;
   background: rgba(12, 18, 28, 0.85); border: 1px solid rgba(200, 147, 54, 0.45); color: var(--brass-light);
+}
+.replay-badge {
+  border-color: var(--cyan-cold); color: #b8f2ff;
+  background: rgba(8, 28, 46, 0.9); box-shadow: 0 0 12px rgba(73, 214, 255, 0.35);
 }
 .side-maxwin { display: none; }
 
@@ -140,19 +181,34 @@ body.bonus-active #top-right-badges { display: none; }
 .win-banner-label { font-family: var(--font-display); font-size: 12px; color: var(--brass-light); letter-spacing: 2px; }
 #win-banner-amount { font-family: var(--font-display); font-size: 22px; font-weight: 900; color: #fff; text-shadow: 0 0 14px var(--ember); }
 
-/* RETRIGGER PATLAMA BANNERI */
-#retrigger-banner {
+/* TOPLAM VS ÇARPAN & RETRIGGER PATLAMA BANNERLARI */
+#vs-total-banner, #retrigger-banner {
   position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
-  padding: 14px 34px; border-radius: 16px; pointer-events: none; z-index: 12; text-align: center;
-  background: radial-gradient(circle at 50% 35%, rgba(160,64,12,0.96), rgba(24,10,4,0.98));
+  padding: 14px 32px; border-radius: 16px; pointer-events: none; z-index: 12; text-align: center;
+  background: radial-gradient(circle at 50% 35%, rgba(164,66,12,0.95), rgba(20,10,4,0.97));
   border: 2.5px solid var(--brass-bright);
   box-shadow: 0 0 54px rgba(255, 114, 32, 0.85), inset 0 0 18px rgba(255,241,191,0.45);
-  animation: tierSlam 0.42s cubic-bezier(0.2, 1.4, 0.4, 1);
+  animation: tierSlam 0.38s cubic-bezier(0.2, 1.4, 0.4, 1);
 }
-.retrigger-eyebrow { display: block; font-size: 12px; letter-spacing: 3.5px; color: var(--brass-bright); font-weight: 700; }
-#retrigger-text { font-family: var(--font-display); font-size: clamp(24px, 5vw, 38px); font-weight: 900; color: #fff; text-shadow: 0 0 22px var(--ember); }
+.vs-total-eyebrow, .retrigger-eyebrow {
+  display: block; font-size: 11px; letter-spacing: 3.2px; color: var(--brass-bright); font-weight: 700;
+}
+#vs-total-text, #retrigger-text {
+  font-family: var(--font-display); font-size: clamp(22px, 4.8vw, 36px); font-weight: 900;
+  color: #fff; text-shadow: 0 0 22px var(--ember); white-space: nowrap;
+}
 
-/* WAYLANDERS TARZI İNCE VE FERAH ALT BAR */
+/* REPLAY BİTİŞ PLAY AGAIN BAR */
+#replay-again-bar {
+  position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%); z-index: 15;
+  display: flex; align-items: center; gap: 14px; padding: 10px 18px; border-radius: 14px;
+  background: rgba(8, 12, 22, 0.94); border: 2px solid var(--brass-bright);
+  box-shadow: 0 10px 36px rgba(0,0,0,0.9), 0 0 24px rgba(255,114,32,0.4);
+  animation: popIn 0.28s ease;
+}
+.replay-done-tag { font-family: var(--font-display); font-size: 13px; letter-spacing: 2px; color: var(--brass-light); white-space: nowrap; }
+
+/* FERAH ALT BAR */
 #bottom-bar {
   display: flex; flex-direction: column; flex-shrink: 0; z-index: 6;
   background: linear-gradient(180deg, rgba(8,12,20,0.45) 0%, rgba(5,8,14,0.94) 48%, rgba(4,6,11,0.99) 100%);
@@ -210,7 +266,6 @@ body.bonus-active #top-right-badges { display: none; }
 }
 .spin-gear { width: 42px; height: 42px; }
 
-/* İNCE ALT ŞERİT (BALANCE | WIN | BET) */
 .bar-strip {
   display: flex; align-items: center; justify-content: space-evenly;
   padding: 5px 14px calc(6px + env(safe-area-inset-bottom));
@@ -248,7 +303,7 @@ body.bonus-active #top-right-badges { display: none; }
 #studio-intro {
   position: fixed; inset: 0; z-index: 55; background: #000;
   display: grid; place-items: center; cursor: pointer;
-  transition: opacity 0.65s ease;
+  transition: opacity 0.6s ease;
 }
 #studio-intro.fade-out { opacity: 0; pointer-events: none; }
 #studio-video { width: 100%; height: 100%; max-width: 100vw; max-height: 100dvh; object-fit: contain; }
@@ -260,11 +315,11 @@ body.bonus-active #top-right-badges { display: none; }
   font-size: 11px; letter-spacing: 3px; color: rgba(255,255,255,0.45);
 }
 
-/* 1. ÇERÇEVESİZ TAM EKRAN SPLASH (WAYLANDERS TARZI — KUTU YOK!) */
+/* 1. ÇERÇEVESİZ TAM EKRAN SPLASH (BAŞTAN HAZIR) */
 #splash-screen {
   position: fixed; inset: 0; z-index: 35; overflow: hidden;
   display: flex; align-items: center; justify-content: center;
-  cursor: pointer; transition: opacity 0.55s ease;
+  background: #05080e; cursor: pointer; transition: opacity 0.55s ease;
 }
 #splash-screen.fade-out { opacity: 0; pointer-events: none; }
 .splash-bg {
@@ -327,7 +382,7 @@ body.bonus-active #top-right-badges { display: none; }
 /* CTA BUTONLAR */
 .cta-btn {
   position: relative; overflow: hidden;
-  min-width: 164px; padding: 12px 30px; border-radius: 10px; cursor: pointer;
+  min-width: 156px; padding: 11px 28px; border-radius: 10px; cursor: pointer;
   font-family: var(--font-display); font-size: 15px; font-weight: 900; letter-spacing: 2px;
   color: #180f04; border: 2px solid #fff3c7;
   background: linear-gradient(180deg, #fce091 0%, #d49b39 55%, #8c5a14 100%);
@@ -421,6 +476,15 @@ body.bonus-active #top-right-badges { display: none; }
 }
 .pl-box span { display: block; font-size: 10px; color: var(--text-muted); margin-bottom: 3px; }
 .pl-box svg { width: 100%; max-width: 60px; height: auto; }
+
+.ui-guide-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.ug-item {
+  padding: 9px 11px; border-radius: 8px;
+  background: rgba(7, 10, 16, 0.76); border: 1px solid rgba(200, 147, 54, 0.26);
+}
+.ug-item strong { display: block; font-family: var(--font-display); font-size: 11.5px; color: var(--brass-bright); margin-bottom: 3px; letter-spacing: 0.8px; }
+.ug-item p { font-size: 12.5px; color: var(--text-muted); line-height: 1.3; }
+
 .legal-note { font-size: 12px; color: var(--text-muted); margin-top: 14px; line-height: 1.4; opacity: 0.85; }
 
 .modal-emblem-ring {
@@ -465,7 +529,7 @@ body.bonus-active #top-right-badges { display: none; }
 .dramatic-number { font-family: var(--font-display); font-size: 68px; font-weight: 900; color: #fff; line-height: 1; text-shadow: 0 0 36px var(--ember); }
 .dramatic-amount { font-family: var(--font-display); font-size: 44px; font-weight: 900; color: #fff; text-shadow: 0 0 30px var(--ember); }
 
-/* AAA BIG WIN OVERLAY (ÖN KATMAN SİKKE YAĞMURU + DÖNEN SUNBURST) */
+/* AAA BIG WIN OVERLAY */
 #bigwin-overlay {
   cursor: pointer; overflow: hidden;
   background: radial-gradient(circle at 50% 50%, rgba(126,48,8,0.64) 0%, rgba(4,4,10,0.88) 74%);
@@ -558,9 +622,10 @@ body.bonus-active #top-right-badges { display: none; }
   .paytable-grid { grid-template-columns: 1fr 1fr; }
   .paylines-grid { grid-template-columns: repeat(4, 1fr); }
   .info-stats { grid-template-columns: repeat(2, 1fr); }
+  .ui-guide-grid { grid-template-columns: 1fr; }
 }
 
-/* MOBİL YATAY & POPOUT L KOMPAKT */
+/* MOBİL YATAY & POPOUT L (~800×450) KOMPAKT */
 @media (max-height: 520px) {
   #side-panel { width: clamp(124px, 17vw, 174px); gap: 7px; padding: 5px 6px 5px 10px; }
   #game-logo { max-height: 58px; }
